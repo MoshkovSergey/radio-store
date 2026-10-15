@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 
 import { api, clearToken, getToken, resolveMediaUrl, setToken } from './api';
+import { BlogTab } from './BlogTab';
 import type {
 	AdminProduct,
 	AdminUser,
@@ -13,6 +14,7 @@ import type {
 	ProductPayload,
 	User,
 } from './types';
+import './blog.css';
 
 const ORDER_STATUSES = [
 	'new',
@@ -134,7 +136,7 @@ export default function App() {
 							setUser(null);
 						}}
 					>
-						Выйти
+					 Выйти
 					</button>
 				</div>
 			</div>
@@ -220,7 +222,7 @@ function LoginPage({ onLogin }: { onLogin: (user: User) => void }) {
 	);
 }
 
-type Tab = 'products' | 'categories' | 'orders' | 'users';
+type Tab = 'products' | 'categories' | 'orders' | 'blog' | 'users';
 
 function AdminPanel({ user, onLogout }: { user: User; onLogout: () => void }) {
 	const [tab, setTab] = useState<Tab>('products');
@@ -284,6 +286,12 @@ function AdminPanel({ user, onLogout }: { user: User; onLogout: () => void }) {
 					) : null}
 				</button>
 				<button
+					className={tab === 'blog' ? 'tab active' : 'tab'}
+					onClick={() => setTab('blog')}
+				>
+					Блог
+				</button>
+				<button
 					className={tab === 'users' ? 'tab active' : 'tab'}
 					onClick={() => setTab('users')}
 				>
@@ -297,6 +305,7 @@ function AdminPanel({ user, onLogout }: { user: User; onLogout: () => void }) {
 				{tab === 'orders' ? (
 					<OrdersTab onStatusChanged={refreshNewOrdersCount} />
 				) : null}
+				{tab === 'blog' ? <BlogTab /> : null}
 				{tab === 'users' ? <UsersTab /> : null}
 			</main>
 		</div>

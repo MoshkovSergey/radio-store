@@ -2,9 +2,10 @@
 const nextConfig = {
   reactStrictMode: true,
 
-  // Скрываем индикатор разработки (кружок с «N») в dev-режиме.
-  // В production он и так не показывается.
-  devIndicators: 'hidden',
+  // Полностью отключаем dev-индикаторы (кружок с «N» и статус сборки).
+  // В твоей версии Next схема devIndicators принимает объект или false,
+  // но НЕ строку 'hidden' — строка давала warning и игнорировалась.
+  devIndicators: false,
 
   images: {
     remotePatterns: [

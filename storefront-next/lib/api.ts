@@ -1,5 +1,6 @@
 import type {
   AuthResponse,
+  BlogPost,
   Cart,
   Category,
   CreateOrderResponse,
@@ -140,6 +141,42 @@ export async function getProductWithCategory(
     categories.find((item) => item.id === product.category_id) ?? null;
 
   return { ...product, category };
+}
+
+// ===== Блог (серверные функции для SSR/ISR) =====
+
+export async function getBlogPosts(params: {
+  limit?: number;
+  offset?: number;
+  revalidate?: number;
+} = {}): Promise<BlogPost[]> {
+  const query = new URLSearchParams();
+  query.set('limit', String(params.limit ?? 20));
+
+  if (params.offset !== undefined) {
+    query.set('offset', String(params.offset));
+  }
+
+  const data = await serverFetch<BlogPost[]>(
+    `/api/v1/blog/posts?${query.toString()}`,
+    { next: { revalidate: params.revalidate ?? 300 } },
+  );
+
+  return data ?? [];
+}
+
+export async function getBlogPostBySlug(slug: string): Promise<BlogPost | null> {
+  return serverFetch<BlogPost>(`/api/v1/blog/posts/${encodeURIComponent(slug)}`, {
+    next: { revalidate: 300 },
+  });
+}
+
+export async function getAllBlogPostsForSitemap(): Promise<BlogPost[]> {
+  const data = await serverFetch<BlogPost[]>('/api/v1/blog/posts?limit=100', {
+    next: { revalidate: 300 },
+  });
+
+  return data ?? [];
 }
 
 // ===== Клиентские функции (используются только в "use client") =====

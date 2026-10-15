@@ -22,6 +22,10 @@ export function Header() {
             Каталог
           </Link>
 
+          <Link href="/blog" className="header-action">
+            Блог
+          </Link>
+
           {user ? (
             <Link href="/orders" className="header-action">
               Заказы

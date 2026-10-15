@@ -1,7 +1,6 @@
 package apihttp
 
 import (
-	"log/slog"
 	"mime"
 	"net/http"
 	"os"
@@ -52,8 +51,4 @@ func (s *Server) serveProductImage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 
 	http.ServeContent(w, r, name, stat.ModTime(), f)
-
-	if err != nil {
-		slog.Error("failed to serve product image", "name", name, "error", err)
-	}
 }

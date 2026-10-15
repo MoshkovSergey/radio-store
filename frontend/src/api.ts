@@ -2,6 +2,8 @@ import type {
 	AdminProduct,
 	AdminUser,
 	AuthResponse,
+	BlogPost,
+	BlogPostPayload,
 	Category,
 	CategoryPayload,
 	Order,
@@ -302,6 +304,37 @@ export const api = {
 
 	getInvoiceHtml(invoiceId: number): Promise<string> {
 		return textRequest(`/api/v1/admin/invoices/${invoiceId}/view`);
+	},
+
+	listBlogPosts(): Promise<BlogPost[]> {
+		return request<BlogPost[]>('/api/v1/admin/blog/posts');
+	},
+
+	createBlogPost(payload: BlogPostPayload): Promise<BlogPost> {
+		return request<BlogPost>('/api/v1/admin/blog/posts', {
+			method: 'POST',
+			body: JSON.stringify(payload),
+		});
+	},
+
+	updateBlogPost(id: number, payload: BlogPostPayload): Promise<BlogPost> {
+		return request<BlogPost>(`/api/v1/admin/blog/posts/${id}`, {
+			method: 'PATCH',
+			body: JSON.stringify(payload),
+		});
+	},
+
+	deleteBlogPost(id: number): Promise<{ message: string }> {
+		return request<{ message: string }>(`/api/v1/admin/blog/posts/${id}`, {
+			method: 'DELETE',
+		});
+	},
+
+	uploadBlogCover(postId: number, file: File): Promise<BlogPost> {
+		const formData = new FormData();
+		formData.append('file', file);
+
+		return uploadRequest<BlogPost>(`/api/v1/admin/blog/posts/${postId}/cover`, formData);
 	},
 
 	listUsers(params: {

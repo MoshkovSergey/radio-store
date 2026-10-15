@@ -7,6 +7,7 @@ import { AuthProvider } from '@/lib/auth-context';
 import { absoluteUrl, siteUrl } from '@/lib/seo';
 
 import './globals.css';
+import './blog-styles.css';
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl()),

@@ -1,0 +1,23 @@
+.blog-body-input {
+	min-height: 320px;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: 13px;
+	line-height: 1.5;
+}
+
+.blog-cover-panel {
+	margin-top: 16px;
+}
+
+.blog-cover-panel h4 {
+	margin: 0 0 10px;
+}
+
+.blog-cover-preview {
+	max-width: 320px;
+	width: 100%;
+	border-radius: 10px;
+	border: 1px solid #e5e7eb;
+	display: block;
+	margin-bottom: 12px;
+}

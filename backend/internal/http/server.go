@@ -34,11 +34,15 @@ func New(db *pgxpool.Pool, jwtSecret string, uploadDir string, smtpCfg config.SM
 	mux.HandleFunc("GET /sitemap.xml", s.sitemapXML)
 
 	mux.HandleFunc("GET /media/products/{filename}", s.serveProductImage)
+	mux.HandleFunc("GET /media/blog/{filename}", s.serveBlogImage)
 
 	mux.HandleFunc("GET /api/v1/categories", s.listCategories)
 	mux.HandleFunc("GET /api/v1/products", s.listProducts)
 	mux.HandleFunc("GET /api/v1/products/images", s.productImagesBatch)
 	mux.HandleFunc("GET /api/v1/products/{id}", s.getProduct)
+
+	mux.HandleFunc("GET /api/v1/blog/posts", s.listBlogPosts)
+	mux.HandleFunc("GET /api/v1/blog/posts/{slug}", s.getBlogPostBySlug)
 
 	mux.HandleFunc("POST /api/v1/auth/register", s.register)
 	mux.HandleFunc("POST /api/v1/auth/login", s.login)
@@ -77,6 +81,12 @@ func New(db *pgxpool.Pool, jwtSecret string, uploadDir string, smtpCfg config.SM
 	mux.HandleFunc("GET /api/v1/admin/invoices", s.adminMiddleware(s.adminListInvoices))
 	mux.HandleFunc("POST /api/v1/admin/invoices/{id}/send", s.adminMiddleware(s.adminSendInvoice))
 	mux.HandleFunc("GET /api/v1/admin/invoices/{id}/view", s.adminMiddleware(s.adminRenderInvoice))
+
+	mux.HandleFunc("GET /api/v1/admin/blog/posts", s.adminMiddleware(s.adminListBlogPosts))
+	mux.HandleFunc("POST /api/v1/admin/blog/posts", s.adminMiddleware(s.adminCreateBlogPost))
+	mux.HandleFunc("PATCH /api/v1/admin/blog/posts/{id}", s.adminMiddleware(s.adminUpdateBlogPost))
+	mux.HandleFunc("DELETE /api/v1/admin/blog/posts/{id}", s.adminMiddleware(s.adminDeleteBlogPost))
+	mux.HandleFunc("POST /api/v1/admin/blog/posts/{id}/cover", s.adminMiddleware(s.adminUploadBlogCover))
 
 	mux.HandleFunc("GET /api/v1/admin/users", s.adminMiddleware(s.adminListUsers))
 	mux.HandleFunc("GET /api/v1/admin/users/{id}", s.adminMiddleware(s.adminGetUser))

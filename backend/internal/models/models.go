@@ -98,3 +98,17 @@ type OrderInvoice struct {
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
 }
+
+type BlogPost struct {
+	ID            int64      `json:"id"`
+	Slug          string     `json:"slug"`
+	Title         string     `json:"title"`
+	Excerpt       *string    `json:"excerpt,omitempty"`
+	Body          string     `json:"body"`
+	CoverImageURL *string    `json:"cover_image_url,omitempty"`
+	Author        *string    `json:"author,omitempty"`
+	IsPublished   bool       `json:"is_published"`
+	PublishedAt   *time.Time `json:"published_at,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+}
