@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -51,21 +52,22 @@ type adminProductRequest struct {
 }
 
 type adminProductResponse struct {
-	ID            int64           `json:"id"`
-	CategoryID    int64           `json:"category_id"`
-	CategoryName  string          `json:"category_name"`
-	Name          string          `json:"name"`
-	Slug          string          `json:"slug"`
-	SKU           string          `json:"sku"`
-	Manufacturer  *string         `json:"manufacturer,omitempty"`
-	Description   *string         `json:"description,omitempty"`
-	PriceMinor    int64           `json:"price_minor"`
-	Currency      string          `json:"currency"`
-	Attributes    json.RawMessage `json:"attributes"`
-	StockQuantity int             `json:"stock_quantity"`
-	IsActive      bool            `json:"is_active"`
-	CreatedAt     time.Time       `json:"created_at"`
-	UpdatedAt     time.Time       `json:"updated_at"`
+	ID              int64           `json:"id"`
+	CategoryID      int64           `json:"category_id"`
+	CategoryName    string          `json:"category_name"`
+	Name            string          `json:"name"`
+	Slug            string          `json:"slug"`
+	SKU             string          `json:"sku"`
+	Manufacturer    *string         `json:"manufacturer,omitempty"`
+	Description     *string         `json:"description,omitempty"`
+	PriceMinor      int64           `json:"price_minor"`
+	Currency        string          `json:"currency"`
+	Attributes      json.RawMessage `json:"attributes"`
+	StockQuantity   int             `json:"stock_quantity"`
+	IsActive        bool            `json:"is_active"`
+	PrimaryImageURL *string         `json:"primary_image_url,omitempty"`
+	CreatedAt       time.Time       `json:"created_at"`
+	UpdatedAt       time.Time       `json:"updated_at"`
 }
 
 type adminStockRequest struct {
@@ -106,6 +108,13 @@ SELECT
 	p.attributes,
 	COALESCE(s.quantity, 0) AS stock_quantity,
 	p.is_active,
+	(
+		SELECT pi.url
+		FROM product_images pi
+		WHERE pi.product_id = p.id
+		ORDER BY pi.is_primary DESC, pi.position ASC, pi.id ASC
+		LIMIT 1
+	) AS primary_image_url,
 	p.created_at,
 	p.updated_at
 FROM products p
@@ -152,6 +161,7 @@ func (s *Server) fetchAdminProduct(ctx context.Context, q dbQuerier, productID i
 		&product.Attributes,
 		&product.StockQuantity,
 		&product.IsActive,
+		&product.PrimaryImageURL,
 		&product.CreatedAt,
 		&product.UpdatedAt,
 	)
@@ -186,6 +196,7 @@ func (s *Server) adminListProducts(w http.ResponseWriter, r *http.Request) {
 			&product.Attributes,
 			&product.StockQuantity,
 			&product.IsActive,
+			&product.PrimaryImageURL,
 			&product.CreatedAt,
 			&product.UpdatedAt,
 		); err != nil {
@@ -790,3 +801,5 @@ func (s *Server) adminUpdateOrderStatus(w http.ResponseWriter, r *http.Request) 
 
 	writeJSON(w, http.StatusOK, order)
 }
+
+var _ = strconv.Itoa

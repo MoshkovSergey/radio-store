@@ -1,5 +1,36 @@
 /frontend/.env
 /storefront/.env
-/frontend/node_modules/
-/storefront/node_modules/
 .env
+
+# Environment
+.env
+.env.local
+
+# Go
+backend/bin/
+backend/tmp/
+backend/uploads/
+
+# Node / React
+frontend/node_modules/
+frontend/dist/
+storefront/node_modules/
+storefront/dist/
+
+# Flutter / Dart
+mobile/.dart_tool/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/build/
+mobile/.packages
+mobile/pubspec.lock
+radio_store_mobile/.dart_tool/
+radio_store_mobile/.flutter-plugins
+radio_store_mobile/.flutter-plugins-dependencies
+radio_store_mobile/build/
+radio_store_mobile/.packages
+radio_store_mobile/pubspec.lock
+
+# IDE
+.idea/
+.vscode/

@@ -1,7 +1,7 @@
-import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 
-import { api, clearToken, getToken, setToken } from './api';
-import type { Cart, Category, Order, Product, User } from './types';
+import { api, clearToken, getToken, resolveMediaUrl, setToken } from './api';
+import type { Cart, Category, Order, Product, ProductImage, User } from './types';
 
 type Route =
 	| { page: 'catalog' }
@@ -10,6 +10,8 @@ type Route =
 	| { page: 'login' }
 	| { page: 'orders' }
 	| { page: 'order'; id: number };
+
+type SortOption = 'default' | 'price_asc' | 'price_desc' | 'name';
 
 const ORDER_STATUS_LABELS: Record<string, string> = {
 	new: 'Новый',
@@ -44,19 +46,84 @@ function formatAttributeValue(value: unknown): string {
 	return String(value);
 }
 
+function getInitials(value: string): string {
+	const cleaned = value.trim();
+
+	if (!cleaned) {
+		return 'RS';
+	}
+
+	const parts = cleaned.split(/\s+/).filter(Boolean);
+
+	if (parts.length >= 2) {
+		return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+	}
+
+	return cleaned.slice(0, 2).toUpperCase();
+}
+
+function notifyCartUpdated(): void {
+	window.dispatchEvent(new Event('cart:updated'));
+}
+
+function MediaThumb({
+	url,
+	name,
+	className,
+}: {
+	url?: string | null;
+	name: string;
+	className: string;
+}) {
+	const resolved = resolveMediaUrl(url);
+
+	if (resolved) {
+		return <img className={className} src={resolved} alt={name} loading="lazy" />;
+	}
+
+	return (
+		<div className={`${className} placeholder`}>
+			<span>{getInitials(name)}</span>
+		</div>
+	);
+}
+
 export default function App() {
 	const [user, setUser] = useState<User | null>(null);
 	const [checkingSession, setCheckingSession] = useState(true);
 	const [route, setRoute] = useState<Route>({ page: 'catalog' });
+	const [cartCount, setCartCount] = useState<number | null>(null);
+
+	const navigate = useCallback((next: Route) => {
+		setRoute(next);
+		window.scrollTo({ top: 0, behavior: 'smooth' });
+	}, []);
+
+	const refreshCartCount = useCallback(async () => {
+		if (!user) {
+			setCartCount(null);
+			return;
+		}
+
+		try {
+			const cart = await api.getCart();
+			const count = cart.items.reduce((sum, item) => sum + item.quantity, 0);
+			setCartCount(count);
+		} catch {
+			setCartCount(null);
+		}
+	}, [user]);
 
 	useEffect(() => {
-		const listener = () => {
+		const handleLogoutEvent = () => {
 			setUser(null);
+			setCartCount(null);
 		};
 
-		window.addEventListener('auth:logout', listener);
+		window.addEventListener('auth:logout', handleLogoutEvent);
+
 		return () => {
-			window.removeEventListener('auth:logout', listener);
+			window.removeEventListener('auth:logout', handleLogoutEvent);
 		};
 	}, []);
 
@@ -82,69 +149,94 @@ export default function App() {
 			});
 	}, []);
 
-	const navigate = useCallback((next: Route) => {
-		setRoute(next);
-		window.scrollTo({ top: 0 });
-	}, []);
+	useEffect(() => {
+		void refreshCartCount();
+	}, [refreshCartCount]);
 
-	function handleAuthSuccess(loggedUser: User) {
+	useEffect(() => {
+		const handleCartUpdated = () => {
+			void refreshCartCount();
+		};
+
+		window.addEventListener('cart:updated', handleCartUpdated);
+
+		return () => {
+			window.removeEventListener('cart:updated', handleCartUpdated);
+		};
+	}, [refreshCartCount]);
+
+	function handleLoginSuccess(loggedUser: User) {
 		setUser(loggedUser);
-		navigate({ page: 'cart' });
+		navigate({ page: 'catalog' });
 	}
 
 	function handleLogout() {
 		clearToken();
 		setUser(null);
+		setCartCount(null);
 		navigate({ page: 'catalog' });
 	}
 
 	if (checkingSession) {
-		return <div className="center-screen">Загрузка...</div>;
+		return (
+			<div className="page-loader">
+				<div className="spinner" />
+			</div>
+		);
 	}
 
 	return (
-		<div className="app-shell">
-			<header className="topbar">
-				<button className="brand" onClick={() => navigate({ page: 'catalog' })}>
-					Radio Store
-				</button>
-
-				<nav className="topbar-nav">
-					<button className="button" onClick={() => navigate({ page: 'catalog' })}>
-						Каталог
+		<div className="marketplace">
+			<header className="header">
+				<div className="header-inner">
+					<button className="logo" onClick={() => navigate({ page: 'catalog' })}>
+						<span className="logo-mark">RS</span>
+						<span className="logo-text">Radio Store</span>
 					</button>
 
-					{user ? (
-						<button className="button" onClick={() => navigate({ page: 'orders' })}>
-							Мои заказы
+					<nav className="header-actions">
+						<button className="header-action" onClick={() => navigate({ page: 'catalog' })}>
+							Каталог
 						</button>
-					) : null}
 
-					<button className="button" onClick={() => navigate({ page: 'cart' })}>
-						Корзина
-					</button>
-
-					{user ? (
-						<>
-							<span className="topbar-user">{user.email}</span>
-							<button className="button" onClick={handleLogout}>
-								Выйти
+						{user ? (
+							<button className="header-action" onClick={() => navigate({ page: 'orders' })}>
+								Заказы
 							</button>
-						</>
-					) : (
-						<button className="button primary" onClick={() => navigate({ page: 'login' })}>
-							Войти
+						) : null}
+
+						<button
+							className="header-action cart-action"
+							onClick={() => navigate({ page: 'cart' })}
+						>
+							Корзина
+							{cartCount !== null && cartCount > 0 ? (
+								<span className="cart-badge">{cartCount > 99 ? '99+' : cartCount}</span>
+							) : null}
 						</button>
-					)}
-				</nav>
+
+						{user ? (
+							<>
+								<span className="header-email">{user.email}</span>
+								<button className="button" onClick={handleLogout}>
+									Выйти
+								</button>
+							</>
+						) : (
+							<button className="button primary" onClick={() => navigate({ page: 'login' })}>
+								Войти
+							</button>
+						)}
+					</nav>
+				</div>
 			</header>
 
-			<main className="content">
+			<main className="main">
 				{route.page === 'catalog' ? (
 					<CatalogPage
-						onOpenProduct={(productID) => {
-							navigate({ page: 'product', id: productID });
-						}}
+						user={user}
+						onOpenProduct={(productID) => navigate({ page: 'product', id: productID })}
+						onRequireAuth={() => navigate({ page: 'login' })}
 					/>
 				) : null}
 
@@ -154,7 +246,7 @@ export default function App() {
 
 				{route.page === 'cart' ? <CartPage user={user} onNavigate={navigate} /> : null}
 
-				{route.page === 'login' ? <LoginPage onSuccess={handleAuthSuccess} /> : null}
+				{route.page === 'login' ? <LoginPage onSuccess={handleLoginSuccess} /> : null}
 
 				{route.page === 'orders' ? <OrdersPage user={user} onNavigate={navigate} /> : null}
 
@@ -162,11 +254,26 @@ export default function App() {
 					<OrderPage id={route.id} user={user} onNavigate={navigate} />
 				) : null}
 			</main>
+
+			<footer className="footer">
+				<div className="footer-inner">
+					<span>© 2026 Radio Store</span>
+					<span>Магазин радиодеталей, модулей и инструментов</span>
+				</div>
+			</footer>
 		</div>
 	);
 }
 
-function CatalogPage({ onOpenProduct }: { onOpenProduct: (productID: number) => void }) {
+function CatalogPage({
+	user,
+	onOpenProduct,
+	onRequireAuth,
+}: {
+	user: User | null;
+	onOpenProduct: (productID: number) => void;
+	onRequireAuth: () => void;
+}) {
 	const [categories, setCategories] = useState<Category[]>([]);
 	const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
 	const [searchInput, setSearchInput] = useState('');
@@ -174,25 +281,33 @@ function CatalogPage({ onOpenProduct }: { onOpenProduct: (productID: number) => 
 	const [products, setProducts] = useState<Product[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState('');
+	const [sort, setSort] = useState<SortOption>('default');
+	const [visibleCount, setVisibleCount] = useState(24);
+	const [toast, setToast] = useState('');
+	const [addingProductId, setAddingProductId] = useState<number | null>(null);
 
 	useEffect(() => {
 		api
 			.listCategories()
 			.then(setCategories)
-			.catch((err) => {
-				setError(err instanceof Error ? err.message : 'Не удалось загрузить категории');
+			.catch(() => {
+				// Категории не критичны для рендера каталога.
 			});
 	}, []);
 
 	useEffect(() => {
 		const timer = setTimeout(() => {
 			setSearch(searchInput.trim());
-		}, 300);
+		}, 350);
 
 		return () => {
 			clearTimeout(timer);
 		};
 	}, [searchInput]);
+
+	useEffect(() => {
+		setVisibleCount(24);
+	}, [selectedCategory, search, sort]);
 
 	const loadProducts = useCallback(async () => {
 		setLoading(true);
@@ -202,7 +317,9 @@ function CatalogPage({ onOpenProduct }: { onOpenProduct: (productID: number) => 
 			const response = await api.listProducts({
 				category_id: selectedCategory ?? undefined,
 				search: search || undefined,
+				limit: 100,
 			});
+
 			setProducts(response);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : 'Не удалось загрузить товары');
@@ -215,78 +332,244 @@ function CatalogPage({ onOpenProduct }: { onOpenProduct: (productID: number) => 
 		void loadProducts();
 	}, [loadProducts]);
 
+	const sortedProducts = useMemo(() => {
+		const items = [...products];
+
+		if (sort === 'price_asc') {
+			items.sort((a, b) => a.price_minor - b.price_minor);
+		} else if (sort === 'price_desc') {
+			items.sort((a, b) => b.price_minor - a.price_minor);
+		} else if (sort === 'name') {
+			items.sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+		}
+
+		return items;
+	}, [products, sort]);
+
+	const visibleProducts = sortedProducts.slice(0, visibleCount);
+	const hasMore = sortedProducts.length > visibleCount;
+
+	function showToast(message: string) {
+		setToast(message);
+		window.setTimeout(() => setToast(''), 2200);
+	}
+
+	async function quickAdd(product: Product) {
+		if (!user) {
+			onRequireAuth();
+			return;
+		}
+
+		setAddingProductId(product.id);
+
+		try {
+			await api.addCartItem(product.id, 1);
+			notifyCartUpdated();
+			showToast('Товар добавлен в корзину');
+		} catch (err) {
+			showToast(err instanceof Error ? err.message : 'Не удалось добавить товар');
+		} finally {
+			setAddingProductId(null);
+		}
+	}
+
 	return (
-		<section>
-			<div className="toolbar">
-				<input
-					className="input search-input"
-					placeholder="Поиск: название, SKU, производитель"
-					value={searchInput}
-					onChange={(event) => setSearchInput(event.target.value)}
-				/>
-				<button className="button" onClick={() => void loadProducts()}>
-					Обновить
-				</button>
-			</div>
+		<section className="catalog">
+			<div className="catalog-layout">
+				<aside className="sidebar">
+					<div className="card sidebar-card">
+						<div className="sidebar-title">Категории</div>
 
-			<div className="chips">
-				<button
-					className={selectedCategory === null ? 'chip active' : 'chip'}
-					onClick={() => setSelectedCategory(null)}
-				>
-					Все
-				</button>
+						<button
+							type="button"
+							className={selectedCategory === null ? 'sidebar-link active' : 'sidebar-link'}
+							onClick={() => setSelectedCategory(null)}
+						>
+							Все товары
+						</button>
 
-				{categories.map((category) => (
-					<button
-						key={category.id}
-						className={selectedCategory === category.id ? 'chip active' : 'chip'}
-						onClick={() => setSelectedCategory(category.id)}
-					>
-						{category.name}
-					</button>
-				))}
-			</div>
+						{categories.map((category) => (
+							<button
+								key={category.id}
+								type="button"
+								className={
+									selectedCategory === category.id ? 'sidebar-link active' : 'sidebar-link'
+								}
+								onClick={() => setSelectedCategory(category.id)}
+							>
+								{category.name}
+							</button>
+						))}
+					</div>
+				</aside>
 
-			{error ? <div className="error">{error}</div> : null}
+				<div className="catalog-main">
+					<div className="hero">
+						<div className="hero-content">
+							<div className="hero-badge">Магазин радиодеталей</div>
+							<h1>Компоненты, модули и инструменты для ваших проектов</h1>
+							<p>
+								Резисторы, конденсаторы, микроконтроллеры, ESP32, датчики, инструменты и многое
+								другое.
+							</p>
 
-			{loading ? (
-				<p>Загрузка товаров...</p>
-			) : products.length === 0 ? (
-				<div className="card">Товары не найдены.</div>
-			) : (
-				<div className="product-grid">
-					{products.map((product) => (
-						<ProductCard
-							key={product.id}
-							product={product}
-							onOpen={() => onOpenProduct(product.id)}
-						/>
-					))}
+							<div className="hero-search">
+								<input
+									className="input"
+									placeholder="Поиск по названию, SKU или производителю"
+									value={searchInput}
+									onChange={(event) => setSearchInput(event.target.value)}
+								/>
+								<button className="button primary" onClick={() => void loadProducts()}>
+									Найти
+								</button>
+							</div>
+						</div>
+					</div>
+
+					<div className="mobile-chips">
+						<button
+							type="button"
+							className={selectedCategory === null ? 'chip active' : 'chip'}
+							onClick={() => setSelectedCategory(null)}
+						>
+							Все
+						</button>
+
+						{categories.map((category) => (
+							<button
+								key={category.id}
+								type="button"
+								className={selectedCategory === category.id ? 'chip active' : 'chip'}
+								onClick={() => setSelectedCategory(category.id)}
+							>
+								{category.name}
+							</button>
+						))}
+					</div>
+
+					<div className="toolbar">
+						<div className="results-count">
+							{loading ? 'Загрузка...' : `Найдено: ${sortedProducts.length}`}
+						</div>
+
+						<select
+							className="select compact"
+							value={sort}
+							onChange={(event) => setSort(event.target.value as SortOption)}
+							aria-label="Сортировка"
+						>
+							<option value="default">По умолчанию</option>
+							<option value="price_asc">Сначала дешевле</option>
+							<option value="price_desc">Сначала дороже</option>
+							<option value="name">По названию</option>
+						</select>
+					</div>
+
+					{error && products.length > 0 ? <div className="error">{error}</div> : null}
+
+					{toast ? <div className="toast">{toast}</div> : null}
+
+					{loading && products.length === 0 ? (
+						<div className="state-box">
+							<div className="spinner" />
+						</div>
+					) : error && products.length === 0 ? (
+						<div className="state-box card">
+							<div className="error">{error}</div>
+							<button className="button" onClick={() => void loadProducts()}>
+								Повторить
+							</button>
+						</div>
+					) : visibleProducts.length === 0 ? (
+						<div className="state-box card empty-state">
+							<h3>Ничего не найдено</h3>
+							<p className="muted">Попробуйте изменить запрос или выбрать другую категорию.</p>
+							<button
+								className="button primary"
+								onClick={() => {
+									setSearchInput('');
+									setSearch('');
+									setSelectedCategory(null);
+								}}
+							>
+								Сбросить фильтры
+							</button>
+						</div>
+					) : (
+						<div className="product-grid">
+							{visibleProducts.map((product) => (
+								<ProductCard
+									key={product.id}
+									product={product}
+									isAdding={addingProductId === product.id}
+									onOpen={() => onOpenProduct(product.id)}
+									onQuickAdd={() => void quickAdd(product)}
+								/>
+							))}
+						</div>
+					)}
+
+					{hasMore ? (
+						<div className="load-more">
+							<button className="button" onClick={() => setVisibleCount((count) => count + 24)}>
+								Показать ещё
+							</button>
+						</div>
+					) : null}
 				</div>
-			)}
+			</div>
 		</section>
 	);
 }
 
-function ProductCard({ product, onOpen }: { product: Product; onOpen: () => void }) {
+function ProductCard({
+	product,
+	isAdding,
+	onOpen,
+	onQuickAdd,
+}: {
+	product: Product;
+	isAdding: boolean;
+	onOpen: () => void;
+	onQuickAdd: () => void;
+}) {
+	const inStock = product.stock_quantity > 0 && product.is_active;
+
 	return (
-		<button className="product-card" onClick={onOpen}>
-			<div className="product-name">{product.name}</div>
+		<article className="product-card">
+			<button type="button" className="product-image" onClick={onOpen}>
+				<MediaThumb url={product.primary_image_url} name={product.name} className="product-img" />
 
-			<div className="product-meta">
-				<div>SKU: {product.sku}</div>
-				{product.manufacturer ? <div>Производитель: {product.manufacturer}</div> : null}
+				{product.stock_quantity > 0 ? (
+					<span className="image-badge">В наличии</span>
+				) : (
+					<span className="image-badge out">Нет</span>
+				)}
+			</button>
+
+			<div className="product-body">
+				<div className="product-price-line">
+					<span className="product-price">{formatPrice(product.price_minor, product.currency)}</span>
+				</div>
+
+				<button type="button" className="product-name" onClick={onOpen}>
+					{product.name}
+				</button>
+
+				<div className="product-meta">{product.manufacturer ?? 'Производитель не указан'}</div>
+				<div className="product-sku">SKU: {product.sku}</div>
+
+				<button
+					type="button"
+					className="button primary product-add"
+					disabled={!inStock || isAdding}
+					onClick={onQuickAdd}
+				>
+					{isAdding ? 'Добавление...' : 'В корзину'}
+				</button>
 			</div>
-
-			<div className="product-price">{formatPrice(product.price_minor, product.currency)}</div>
-
-			{product.stock_quantity > 0 ? (
-				<div className="stock ok">В наличии: {product.stock_quantity}</div>
-			) : (
-				<div className="stock empty">Нет в наличии</div>
-			)}
-		</button>
+		</article>
 	);
 }
 
@@ -305,26 +588,65 @@ function ProductPage({
 	const [quantity, setQuantity] = useState(1);
 	const [adding, setAdding] = useState(false);
 	const [message, setMessage] = useState('');
+	const [selectedImage, setSelectedImage] = useState<ProductImage | null>(null);
 
 	useEffect(() => {
+		let cancelled = false;
+
 		setLoading(true);
 		setError('');
 
 		api
 			.getProduct(id)
 			.then((response) => {
-				setProduct(response);
-				setQuantity(1);
+				if (!cancelled) {
+					setProduct(response);
+					setQuantity(1);
+
+					const images = response.images ?? [];
+					const primary = images.find((image) => image.is_primary) ?? images[0] ?? null;
+					setSelectedImage(primary);
+				}
 			})
 			.catch((err) => {
-				setError(err instanceof Error ? err.message : 'Не удалось загрузить товар');
+				if (!cancelled) {
+					setError(err instanceof Error ? err.message : 'Не удалось загрузить товар');
+				}
 			})
 			.finally(() => {
-				setLoading(false);
+				if (!cancelled) {
+					setLoading(false);
+				}
 			});
+
+		return () => {
+			cancelled = true;
+		};
 	}, [id]);
 
-	async function handleAddToCart() {
+	function changeQuantity(delta: number) {
+		if (!product) {
+			return;
+		}
+
+		const maxQuantity = Math.max(1, product.stock_quantity);
+
+		setQuantity((previous) => {
+			const next = previous + delta;
+
+			if (next < 1) {
+				return 1;
+			}
+
+			if (next > maxQuantity) {
+				return maxQuantity;
+			}
+
+			return next;
+		});
+	}
+
+	async function addToCart(goToCart: boolean) {
 		if (!product) {
 			return;
 		}
@@ -334,27 +656,40 @@ function ProductPage({
 			return;
 		}
 
+		setAdding(true);
+		setMessage('');
+
 		try {
-			setAdding(true);
-			setMessage('');
 			await api.addCartItem(product.id, quantity);
-			onNavigate({ page: 'cart' });
-		} catch (err) {
-			setMessage(err instanceof Error ? err.message : 'Не удалось добавить товар в корзину');
-		} finally {
+			notifyCartUpdated();
+
+			if (goToCart) {
+				setAdding(false);
+				onNavigate({ page: 'cart' });
+				return;
+			}
+
 			setAdding(false);
+			setMessage('Товар добавлен в корзину');
+		} catch (err) {
+			setAdding(false);
+			setMessage(err instanceof Error ? err.message : 'Не удалось добавить товар в корзину');
 		}
 	}
 
 	if (loading) {
-		return <p>Загрузка товара...</p>;
+		return (
+			<div className="state-box">
+				<div className="spinner" />
+			</div>
+		);
 	}
 
 	if (error) {
 		return (
-			<div className="card">
+			<div className="state-box card">
 				<div className="error">{error}</div>
-				<button className="button back-button" onClick={() => onNavigate({ page: 'catalog' })}>
+				<button className="button" onClick={() => onNavigate({ page: 'catalog' })}>
 					Назад в каталог
 				</button>
 			</div>
@@ -362,97 +697,175 @@ function ProductPage({
 	}
 
 	if (!product) {
-		return <p>Товар не найден.</p>;
+		return <div className="state-box card">Товар не найден.</div>;
 	}
 
-	const attributes = product.attributes ? Object.entries(product.attributes) : [];
-	const inStock = product.stock_quantity > 0;
+	const canAdd = product.stock_quantity > 0 && product.is_active;
+	const attributeEntries = Object.entries(product.attributes || {});
+	const images = product.images ?? [];
+	const mainImage = selectedImage ?? (images.find((image) => image.is_primary) ?? images[0] ?? null);
 
 	return (
 		<section className="product-page">
 			<button className="button back-button" onClick={() => onNavigate({ page: 'catalog' })}>
-				Назад в каталог
+				← Назад в каталог
 			</button>
 
-			<div className="card">
-				<h2>{product.name}</h2>
-
-				<div className="muted">
-					<div>SKU: {product.sku}</div>
-					{product.manufacturer ? <div>Производитель: {product.manufacturer}</div> : null}
-				</div>
-
-				<div className="product-page-actions">
-					<div className="product-price">
-						{formatPrice(product.price_minor, product.currency)}
-					</div>
-
-					{inStock ? (
-						<span className="badge green">В наличии: {product.stock_quantity}</span>
-					) : (
-						<span className="badge red">Нет в наличии</span>
-					)}
-
-					{product.is_active ? null : <span className="badge red">Товар выключен</span>}
-				</div>
-
-				{product.description ? <p>{product.description}</p> : null}
-
-				<div className="product-page-actions">
-					<input
-						className="input quantity-input"
-						type="number"
-						min={1}
-						max={Math.max(1, product.stock_quantity)}
-						value={quantity}
-						disabled={!inStock || !product.is_active}
-						onChange={(event) => {
-							const value = Number(event.target.value);
-							if (Number.isNaN(value)) {
-								return;
-							}
-
-							const maxValue = Math.max(1, product.stock_quantity);
-							setQuantity(Math.min(Math.max(1, value), maxValue));
-						}}
-					/>
-
-					<button
-						className="button primary"
-						disabled={adding || !inStock || !product.is_active}
-						onClick={() => void handleAddToCart()}
-					>
-						{adding ? 'Добавление...' : 'В корзину'}
-					</button>
-				</div>
-
-				{message ? <div className="error">{message}</div> : null}
-
-				{!user ? (
-					<p className="muted">Чтобы добавить товар в корзину, войдите в аккаунт.</p>
-				) : null}
+			<div className="breadcrumbs">
+				<button onClick={() => onNavigate({ page: 'catalog' })}>Каталог</button>
+				<span>/</span>
+				<span>{product.name}</span>
 			</div>
 
-			{attributes.length > 0 ? (
-				<div className="card">
-					<h3>Характеристики</h3>
-					<table className="table attributes-table">
-						<tbody>
-							{attributes.map(([key, value]) => (
-								<tr key={key}>
-									<td>{key}</td>
-									<td>{formatAttributeValue(value)}</td>
-								</tr>
+			<div className="product-detail-grid">
+				<div className="card product-gallery">
+					<div className="gallery-main">
+						<MediaThumb url={mainImage?.url} name={product.name} className="gallery-img" />
+					</div>
+
+					{images.length > 1 ? (
+						<div className="gallery-thumbs">
+							{images.map((image) => (
+								<button
+									key={image.id}
+									type="button"
+									className={
+										mainImage && mainImage.id === image.id
+											? 'gallery-thumb active'
+											: 'gallery-thumb'
+									}
+									onClick={() => setSelectedImage(image)}
+								>
+									<img src={resolveMediaUrl(image.url)} alt={image.alt ?? product.name} />
+								</button>
 							))}
-						</tbody>
-					</table>
+						</div>
+					) : null}
 				</div>
-			) : null}
+
+				<div className="card buy-panel">
+					<h1>{product.name}</h1>
+
+					<div className="product-short-meta">
+						{product.manufacturer ? <span>{product.manufacturer}</span> : null}
+						<span>SKU: {product.sku}</span>
+					</div>
+
+					<div className="price-block">
+						<div className="current-price">{formatPrice(product.price_minor, product.currency)}</div>
+
+						{product.stock_quantity > 0 ? (
+							<span className="stock-badge in">В наличии: {product.stock_quantity}</span>
+						) : (
+							<span className="stock-badge out">Нет в наличии</span>
+						)}
+
+						{!product.is_active ? <span className="stock-badge out">Товар выключен</span> : null}
+					</div>
+
+					{product.description ? <p className="description">{product.description}</p> : null}
+
+					<div className="quantity-row">
+						<span className="quantity-label">Количество</span>
+
+						<div className="quantity-control">
+							<button type="button" onClick={() => changeQuantity(-1)} disabled={!canAdd}>
+								−
+							</button>
+							<input
+								type="number"
+								min={1}
+								max={Math.max(1, product.stock_quantity)}
+								value={quantity}
+								disabled={!canAdd}
+								onChange={(event) => {
+									const value = Number(event.target.value);
+
+									if (Number.isNaN(value)) {
+										return;
+									}
+
+									const maxQuantity = Math.max(1, product.stock_quantity);
+									setQuantity(Math.min(Math.max(1, value), maxQuantity));
+								}}
+							/>
+							<button type="button" onClick={() => changeQuantity(1)} disabled={!canAdd}>
+								+
+							</button>
+						</div>
+					</div>
+
+					<div className="buy-actions">
+						<button
+							className="button primary large"
+							disabled={!canAdd || adding}
+							onClick={() => void addToCart(false)}
+						>
+							{adding ? 'Добавление...' : 'В корзину'}
+						</button>
+
+						<button
+							className="button secondary large"
+							disabled={!canAdd || adding}
+							onClick={() => void addToCart(true)}
+						>
+							Купить сейчас
+						</button>
+					</div>
+
+					{message ? <div className="inline-message">{message}</div> : null}
+
+					{!user ? <p className="hint">Войдите, чтобы добавить товар в корзину.</p> : null}
+				</div>
+			</div>
+
+			<div className="card specs-card">
+				<h2>Характеристики</h2>
+
+				<table className="table specs-table">
+					<tbody>
+						<tr>
+							<td>SKU</td>
+							<td>{product.sku}</td>
+						</tr>
+
+						{product.manufacturer ? (
+							<tr>
+								<td>Производитель</td>
+								<td>{product.manufacturer}</td>
+							</tr>
+						) : null}
+
+						<tr>
+							<td>Остаток</td>
+							<td>{product.stock_quantity}</td>
+						</tr>
+
+						<tr>
+							<td>Валюта</td>
+							<td>{product.currency}</td>
+						</tr>
+
+						{attributeEntries.map(([key, value]) => (
+							<tr key={key}>
+								<td>{key}</td>
+								<td>{formatAttributeValue(value)}</td>
+							</tr>
+						))}
+					</tbody>
+				</table>
+			</div>
 		</section>
 	);
 }
 
-function CartPage({ user, onNavigate }: { user: User | null; onNavigate: (route: Route) => void }) {
+function CartPage({
+	user,
+	onNavigate,
+}: {
+	user: User | null;
+	onNavigate: (route: Route) => void;
+}) {
 	const [cart, setCart] = useState<Cart | null>(null);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState('');
@@ -460,8 +873,9 @@ function CartPage({ user, onNavigate }: { user: User | null; onNavigate: (route:
 	const [comment, setComment] = useState('');
 	const [processing, setProcessing] = useState(false);
 
-	const load = useCallback(async () => {
+	const loadCart = useCallback(async () => {
 		if (!user) {
+			setCart(null);
 			return;
 		}
 
@@ -479,26 +893,28 @@ function CartPage({ user, onNavigate }: { user: User | null; onNavigate: (route:
 	}, [user]);
 
 	useEffect(() => {
-		void load();
-	}, [load]);
+		void loadCart();
+	}, [loadCart]);
 
-	async function changeQuantity(productID: number, nextQuantity: number) {
+	async function changeQuantity(productId: number, nextQuantity: number) {
 		if (nextQuantity < 1) {
 			return;
 		}
 
 		try {
-			await api.updateCartItem(productID, nextQuantity);
-			await load();
+			await api.updateCartItem(productId, nextQuantity);
+			notifyCartUpdated();
+			await loadCart();
 		} catch (err) {
 			setError(err instanceof Error ? err.message : 'Не удалось изменить количество');
 		}
 	}
 
-	async function removeItem(productID: number) {
+	async function removeItem(productId: number) {
 		try {
-			await api.deleteCartItem(productID);
-			await load();
+			await api.deleteCartItem(productId);
+			notifyCartUpdated();
+			await loadCart();
 		} catch (err) {
 			setError(err instanceof Error ? err.message : 'Не удалось удалить товар');
 		}
@@ -511,100 +927,160 @@ function CartPage({ user, onNavigate }: { user: User | null; onNavigate: (route:
 			return;
 		}
 
-		try {
-			setProcessing(true);
-			setError('');
+		const address = shippingAddress.trim();
 
-			const result = await api.createOrder(shippingAddress, comment);
+		if (!address) {
+			setError('Укажите адрес доставки');
+			return;
+		}
+
+		setProcessing(true);
+		setError('');
+
+		try {
+			const result = await api.createOrder(address, comment.trim());
+			notifyCartUpdated();
+			setShippingAddress('');
+			setComment('');
+			setProcessing(false);
 			onNavigate({ page: 'order', id: result.id });
 		} catch (err) {
-			setError(err instanceof Error ? err.message : 'Не удалось оформить заказ');
-		} finally {
 			setProcessing(false);
+			setError(err instanceof Error ? err.message : 'Не удалось оформить заказ');
 		}
 	}
 
 	if (!user) {
-		return <LoginPrompt text="Чтобы посмотреть корзину, войдите в аккаунт." onNavigate={onNavigate} />;
+		return (
+			<div className="card login-prompt">
+				<h2>Корзина доступна после входа</h2>
+				<p className="muted">Войдите или зарегистрируйтесь, чтобы добавлять товары и оформлять заказы.</p>
+				<button className="button primary" onClick={() => onNavigate({ page: 'login' })}>
+					Войти
+				</button>
+			</div>
+		);
 	}
 
-	if (loading) {
-		return <p>Загрузка корзины...</p>;
+	if (loading && !cart) {
+		return (
+			<div className="state-box">
+				<div className="spinner" />
+			</div>
+		);
 	}
+
+	if (error && !cart) {
+		return (
+			<div className="state-box card">
+				<div className="error">{error}</div>
+				<button className="button" onClick={() => void loadCart()}>
+					Повторить
+				</button>
+			</div>
+		);
+	}
+
+	if (!cart || cart.items.length === 0) {
+		return (
+			<div className="state-box card empty-state">
+				<h2>Корзина пуста</h2>
+				<p className="muted">Добавьте товары из каталога, чтобы оформить заказ.</p>
+				<button className="button primary" onClick={() => onNavigate({ page: 'catalog' })}>
+					Перейти в каталог
+				</button>
+			</div>
+		);
+	}
+
+	const totalQuantity = cart.items.reduce((sum, item) => sum + item.quantity, 0);
 
 	return (
-		<section>
-			<h2>Корзина</h2>
+		<section className="cart-page">
+			<h1>Корзина</h1>
 
 			{error ? <div className="error">{error}</div> : null}
 
-			{!cart || cart.items.length === 0 ? (
-				<div className="card">
-					<p>Корзина пуста.</p>
-					<button className="button primary" onClick={() => onNavigate({ page: 'catalog' })}>
-						Перейти в каталог
-					</button>
-				</div>
-			) : (
-				<div className="card">
-					<table className="table">
-						<thead>
-							<tr>
-								<th>Товар</th>
-								<th>Цена</th>
-								<th>Количество</th>
-								<th>Сумма</th>
-								<th>Действия</th>
-							</tr>
-						</thead>
-						<tbody>
-							{cart.items.map((item) => (
-								<tr key={item.product_id}>
-									<td>
-										<div className="cart-item-name">{item.name}</div>
-										<div className="muted small">SKU: {item.sku}</div>
-									</td>
-									<td>{formatPrice(item.price_minor, item.currency)}</td>
-									<td>
-										<div className="order-actions">
-											<button
-												className="button"
-												onClick={() => void changeQuantity(item.product_id, item.quantity - 1)}
-											>
-												−
-											</button>
-											<span>{item.quantity}</span>
-											<button
-												className="button"
-												onClick={() => void changeQuantity(item.product_id, item.quantity + 1)}
-											>
-												+
-											</button>
-										</div>
-									</td>
-									<td>{formatPrice(item.price_minor * item.quantity, item.currency)}</td>
-									<td>
-										<button
-											className="button danger"
-											onClick={() => void removeItem(item.product_id)}
-										>
-											Удалить
-										</button>
-									</td>
-								</tr>
-							))}
-						</tbody>
-					</table>
+			<div className="cart-layout">
+				<div className="cart-items">
+					{cart.items.map((item) => (
+						<div key={item.product_id} className="card cart-item">
+							<div className="cart-item-image">{getInitials(item.name)}</div>
 
-					<div className="cart-summary">
-						<div className="total">
-							Итого: {formatPrice(cart.total_minor, cart.currency)}
+							<div className="cart-item-info">
+								<div className="cart-item-name">{item.name}</div>
+								<div className="cart-item-sku">SKU: {item.sku}</div>
+								<div className="cart-item-price">
+									{formatPrice(item.price_minor, item.currency)}
+								</div>
+							</div>
+
+							<div className="cart-item-controls">
+								<div className="quantity-control small">
+									<button
+										type="button"
+										onClick={() => void changeQuantity(item.product_id, item.quantity - 1)}
+										disabled={item.quantity <= 1}
+									>
+										−
+									</button>
+									<input
+										type="number"
+										min={1}
+										max={Math.max(1, item.stock_quantity)}
+										value={item.quantity}
+										onChange={(event) => {
+											const value = Number(event.target.value);
+
+											if (Number.isNaN(value)) {
+												return;
+											}
+
+											void changeQuantity(
+												item.product_id,
+												Math.min(Math.max(1, value), Math.max(1, item.stock_quantity)),
+											);
+										}}
+									/>
+									<button
+										type="button"
+										onClick={() => void changeQuantity(item.product_id, item.quantity + 1)}
+										disabled={item.quantity >= item.stock_quantity}
+									>
+										+
+									</button>
+								</div>
+
+								<div className="cart-item-sum">
+									{formatPrice(item.price_minor * item.quantity, item.currency)}
+								</div>
+
+								<button
+									type="button"
+									className="icon-button"
+									onClick={() => void removeItem(item.product_id)}
+								>
+									Удалить
+								</button>
+							</div>
 						</div>
+					))}
+				</div>
+
+				<aside className="card cart-summary">
+					<h2>Ваш заказ</h2>
+
+					<div className="summary-row">
+						<span>Товары ({totalQuantity})</span>
+						<span>{formatPrice(cart.total_minor, cart.currency)}</span>
+					</div>
+
+					<div className="summary-total">
+						<span>Итого</span>
+						<strong>{formatPrice(cart.total_minor, cart.currency)}</strong>
 					</div>
 
 					<form className="checkout-form" onSubmit={handleCheckout}>
-						<h3>Оформление заказа</h3>
-
 						<div className="field">
 							<label>Адрес доставки</label>
 							<input
@@ -616,7 +1092,7 @@ function CartPage({ user, onNavigate }: { user: User | null; onNavigate: (route:
 						</div>
 
 						<div className="field">
-							<label>Комментарий</label>
+							<label>Комментарий к заказу</label>
 							<textarea
 								className="textarea"
 								value={comment}
@@ -624,12 +1100,12 @@ function CartPage({ user, onNavigate }: { user: User | null; onNavigate: (route:
 							/>
 						</div>
 
-						<button className="button primary" disabled={processing}>
+						<button className="button primary large" disabled={processing}>
 							{processing ? 'Оформление...' : 'Оформить заказ'}
 						</button>
 					</form>
-				</div>
-			)}
+				</aside>
+			</div>
 		</section>
 	);
 }
@@ -651,91 +1127,102 @@ function LoginPage({ onSuccess }: { onSuccess: (user: User) => void }) {
 			if (mode === 'login') {
 				const response = await api.login(email, password);
 				setToken(response.token);
+				setLoading(false);
 				onSuccess(response.user);
-			} else {
-				const response = await api.register(email, password, fullName);
-				setToken(response.token);
-				onSuccess(response.user);
+				return;
 			}
-		} catch (err) {
-			setError(err instanceof Error ? err.message : 'Не удалось выполнить вход');
-		} finally {
+
+			const response = await api.register(email, password, fullName);
+			setToken(response.token);
 			setLoading(false);
+			onSuccess(response.user);
+		} catch (err) {
+			setLoading(false);
+			setError(err instanceof Error ? err.message : 'Не удалось выполнить вход');
 		}
 	}
 
 	return (
-		<div className="card auth-card">
-			<h2>{mode === 'login' ? 'Вход' : 'Регистрация'}</h2>
+		<div className="auth-wrap">
+			<div className="card auth-card">
+				<h1 className="auth-title">{mode === 'login' ? 'Вход в аккаунт' : 'Регистрация'}</h1>
 
-			<div className="auth-switch">
-				<button
-					className={mode === 'login' ? 'button primary' : 'button'}
-					type="button"
-					onClick={() => setMode('login')}
-				>
-					Вход
-				</button>
-				<button
-					className={mode === 'register' ? 'button primary' : 'button'}
-					type="button"
-					onClick={() => setMode('register')}
-				>
-					Регистрация
-				</button>
-			</div>
-
-			<form onSubmit={handleSubmit}>
-				<div className="field">
-					<label>Email</label>
-					<input
-						className="input"
-						type="email"
-						value={email}
-						onChange={(event) => setEmail(event.target.value)}
-						required
-					/>
+				<div className="auth-tabs">
+					<button
+						type="button"
+						className={mode === 'login' ? 'auth-tab active' : 'auth-tab'}
+						onClick={() => setMode('login')}
+					>
+						Вход
+					</button>
+					<button
+						type="button"
+						className={mode === 'register' ? 'auth-tab active' : 'auth-tab'}
+						onClick={() => setMode('register')}
+					>
+						Регистрация
+					</button>
 				</div>
 
-				{mode === 'register' ? (
+				<form className="auth-form" onSubmit={handleSubmit}>
 					<div className="field">
-						<label>Имя и фамилия</label>
+						<label>Email</label>
 						<input
 							className="input"
-							value={fullName}
-							onChange={(event) => setFullName(event.target.value)}
+							type="email"
+							value={email}
+							onChange={(event) => setEmail(event.target.value)}
+							required
 						/>
 					</div>
-				) : null}
 
-				<div className="field">
-					<label>Пароль</label>
-					<input
-						className="input"
-						type="password"
-						value={password}
-						onChange={(event) => setPassword(event.target.value)}
-						required
-					/>
-				</div>
+					{mode === 'register' ? (
+						<div className="field">
+							<label>Имя и фамилия</label>
+							<input
+								className="input"
+								value={fullName}
+								onChange={(event) => setFullName(event.target.value)}
+							/>
+						</div>
+					) : null}
 
-				{error ? <div className="error">{error}</div> : null}
+					<div className="field">
+						<label>Пароль</label>
+						<input
+							className="input"
+							type="password"
+							value={password}
+							onChange={(event) => setPassword(event.target.value)}
+							required
+						/>
+					</div>
 
-				<button className="button primary" disabled={loading}>
-					{loading ? 'Выполняется...' : mode === 'login' ? 'Войти' : 'Зарегистрироваться'}
-				</button>
-			</form>
+					{error ? <div className="error">{error}</div> : null}
+
+					<button className="button primary large" disabled={loading}>
+						{loading ? 'Выполняется...' : mode === 'login' ? 'Войти' : 'Зарегистрироваться'}
+					</button>
+				</form>
+			</div>
 		</div>
 	);
 }
 
-function OrdersPage({ user, onNavigate }: { user: User | null; onNavigate: (route: Route) => void }) {
+function OrdersPage({
+	user,
+	onNavigate,
+}: {
+	user: User | null;
+	onNavigate: (route: Route) => void;
+}) {
 	const [orders, setOrders] = useState<Order[]>([]);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState('');
 
-	const load = useCallback(async () => {
+	const loadOrders = useCallback(async () => {
 		if (!user) {
+			setOrders([]);
 			return;
 		}
 
@@ -753,62 +1240,91 @@ function OrdersPage({ user, onNavigate }: { user: User | null; onNavigate: (rout
 	}, [user]);
 
 	useEffect(() => {
-		void load();
-	}, [load]);
+		void loadOrders();
+	}, [loadOrders]);
 
 	if (!user) {
-		return <LoginPrompt text="Чтобы посмотреть заказы, войдите в аккаунт." onNavigate={onNavigate} />;
+		return (
+			<div className="card login-prompt">
+				<h2>Заказы доступны после входа</h2>
+				<p className="muted">Войдите, чтобы посмотреть историю заказов.</p>
+				<button className="button primary" onClick={() => onNavigate({ page: 'login' })}>
+					Войти
+				</button>
+			</div>
+		);
 	}
 
-	if (loading) {
-		return <p>Загрузка заказов...</p>;
+	if (loading && orders.length === 0) {
+		return (
+			<div className="state-box">
+				<div className="spinner" />
+			</div>
+		);
+	}
+
+	if (error && orders.length === 0) {
+		return (
+			<div className="state-box card">
+				<div className="error">{error}</div>
+				<button className="button" onClick={() => void loadOrders()}>
+					Повторить
+				</button>
+			</div>
+		);
 	}
 
 	return (
-		<section>
-			<h2>Мои заказы</h2>
-
-			{error ? <div className="error">{error}</div> : null}
+		<section className="orders-page">
+			<h1>Мои заказы</h1>
 
 			{orders.length === 0 ? (
-				<div className="card">
+				<div className="card empty-state">
 					<p>Заказов пока нет.</p>
 					<button className="button primary" onClick={() => onNavigate({ page: 'catalog' })}>
 						Перейти в каталог
 					</button>
 				</div>
 			) : (
-				<div className="card">
-					<table className="table">
-						<thead>
-							<tr>
-								<th>№</th>
-								<th>Дата</th>
-								<th>Сумма</th>
-								<th>Статус</th>
-								<th>Действия</th>
-							</tr>
-						</thead>
-						<tbody>
-							{orders.map((order) => (
-								<tr key={order.id}>
-									<td>{order.id}</td>
-									<td>{formatDate(order.created_at)}</td>
-									<td>{formatPrice(order.total_minor, order.currency)}</td>
-									<td>{statusLabel(order.status)}</td>
-									<td>
-										<button
-											className="button"
-											onClick={() => onNavigate({ page: 'order', id: order.id })}
-										>
-											Открыть
-										</button>
-									</td>
-								</tr>
-							))}
-						</tbody>
-					</table>
-				</div>
+				orders.map((order) => (
+					<article key={order.id} className="card order-card">
+						<header className="order-card-head">
+							<div>
+								<div className="order-id">Заказ №{order.id}</div>
+								<div className="muted">Оформлен {formatDate(order.created_at)}</div>
+							</div>
+
+							<span className={`status-badge status-${order.status}`}>
+								{statusLabel(order.status)}
+							</span>
+						</header>
+
+						<div className="order-card-body">
+							<div className="order-card-field">
+								<span className="order-card-label">Сумма</span>
+								<span className="order-card-value">
+									{formatPrice(order.total_minor, order.currency)}
+								</span>
+							</div>
+
+							{order.shipping_address ? (
+								<div className="order-card-field">
+									<span className="order-card-label">Адрес доставки</span>
+									<span className="order-card-value">{order.shipping_address}</span>
+								</div>
+							) : null}
+						</div>
+
+						<footer className="order-footer">
+							<button
+								className="button primary"
+								onClick={() => onNavigate({ page: 'order', id: order.id })}
+							>
+								Подробнее
+							</button>
+						</footer>
+					</article>
+				))
 			)}
 		</section>
 	);
@@ -832,31 +1348,56 @@ function OrderPage({
 			return;
 		}
 
+		let cancelled = false;
+
 		setLoading(true);
 		setError('');
 
 		api
 			.getOrder(id)
-			.then(setOrder)
+			.then((response) => {
+				if (!cancelled) {
+					setOrder(response);
+				}
+			})
 			.catch((err) => {
-				setError(err instanceof Error ? err.message : 'Не удалось загрузить заказ');
+				if (!cancelled) {
+					setError(err instanceof Error ? err.message : 'Не удалось загрузить заказ');
+				}
 			})
 			.finally(() => {
-				setLoading(false);
+				if (!cancelled) {
+					setLoading(false);
+				}
 			});
+
+		return () => {
+			cancelled = true;
+		};
 	}, [id, user]);
 
 	if (!user) {
-		return <LoginPrompt text="Чтобы посмотреть заказ, войдите в аккаунт." onNavigate={onNavigate} />;
+		return (
+			<div className="card login-prompt">
+				<h2>Заказ доступен после входа</h2>
+				<button className="button primary" onClick={() => onNavigate({ page: 'login' })}>
+					Войти
+				</button>
+			</div>
+		);
 	}
 
 	if (loading) {
-		return <p>Загрузка заказа...</p>;
+		return (
+			<div className="state-box">
+				<div className="spinner" />
+			</div>
+		);
 	}
 
 	if (error) {
 		return (
-			<div className="card">
+			<div className="state-box card">
 				<div className="error">{error}</div>
 				<button className="button" onClick={() => onNavigate({ page: 'orders' })}>
 					Назад к заказам
@@ -866,78 +1407,112 @@ function OrderPage({
 	}
 
 	if (!order) {
-		return <p>Заказ не найден.</p>;
+		return <div className="state-box card">Заказ не найден.</div>;
 	}
 
+	const items = order.items ?? [];
+	const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
+
 	return (
-		<section>
+		<section className="order-page">
 			<button className="button back-button" onClick={() => onNavigate({ page: 'orders' })}>
-				Назад к заказам
+				← Назад к заказам
 			</button>
 
-			<div className="card">
-				<h2>Заказ №{order.id}</h2>
+			<div className="order-hero card">
+				<div className="order-hero-left">
+					<div className="order-hero-label">Заказ</div>
+					<h1 className="order-hero-number">№{order.id}</h1>
+					<div className="muted">Оформлен {formatDate(order.created_at)}</div>
+				</div>
 
-				<p>
-					<span className="badge blue">{statusLabel(order.status)}</span>{' '}
-					<span className="muted">от {formatDate(order.created_at)}</span>
-				</p>
-
-				<p>
-					<strong>Сумма:</strong>{' '}
-					{formatPrice(order.total_minor, order.currency)}
-				</p>
-
-				{order.shipping_address ? (
-					<p>
-						<strong>Адрес доставки:</strong> {order.shipping_address}
-					</p>
-				) : null}
-
-				{order.comment ? (
-					<p>
-						<strong>Комментарий:</strong> {order.comment}
-					</p>
-				) : null}
+				<div className="order-hero-right">
+					<span className={`status-badge status-${order.status}`}>
+						{statusLabel(order.status)}
+					</span>
+					<div className="order-hero-total">
+						{formatPrice(order.total_minor, order.currency)}
+					</div>
+				</div>
 			</div>
 
-			<div className="card">
-				<h3>Состав заказа</h3>
+			<div className="order-info-grid">
+				<div className="card info-card">
+					<div className="info-card-label">Статус</div>
+					<div className="info-card-value">{statusLabel(order.status)}</div>
+				</div>
 
-				<table className="table">
-					<thead>
-						<tr>
-							<th>Товар</th>
-							<th>SKU</th>
-							<th>Количество</th>
-							<th>Цена</th>
-							<th>Сумма</th>
-						</tr>
-					</thead>
-					<tbody>
-						{(order.items ?? []).map((item) => (
-							<tr key={item.id}>
-								<td>{item.name}</td>
-								<td>{item.sku}</td>
-								<td>{item.quantity}</td>
-								<td>{formatPrice(item.price_minor, order.currency)}</td>
-								<td>{formatPrice(item.price_minor * item.quantity, order.currency)}</td>
-							</tr>
+				<div className="card info-card">
+					<div className="info-card-label">Сумма</div>
+					<div className="info-card-value">
+						{formatPrice(order.total_minor, order.currency)}
+					</div>
+				</div>
+
+				<div className="card info-card">
+					<div className="info-card-label">Позиций</div>
+					<div className="info-card-value">
+						{items.length} шт. · {totalQuantity} ед.
+					</div>
+				</div>
+
+				<div className="card info-card">
+					<div className="info-card-label">Дата оформления</div>
+					<div className="info-card-value">{formatDate(order.created_at)}</div>
+				</div>
+			</div>
+
+			{order.shipping_address || order.comment ? (
+				<div className="card order-extra">
+					{order.shipping_address ? (
+						<div className="order-extra-row">
+							<div className="order-extra-label">Адрес доставки</div>
+							<div className="order-extra-value">{order.shipping_address}</div>
+						</div>
+					) : null}
+
+					{order.comment ? (
+						<div className="order-extra-row">
+							<div className="order-extra-label">Комментарий</div>
+							<div className="order-extra-value">{order.comment}</div>
+						</div>
+					) : null}
+				</div>
+			) : null}
+
+			<div className="card order-items-card">
+				<h2 className="section-title">Состав заказа</h2>
+
+				{items.length === 0 ? (
+					<p className="muted">Состав заказа не найден.</p>
+				) : (
+					<div className="order-items-list">
+						{items.map((item) => (
+							<div key={item.id} className="order-item-row">
+								<div className="order-item-image">{getInitials(item.name)}</div>
+
+								<div className="order-item-info">
+									<div className="order-item-name">{item.name}</div>
+									<div className="order-item-sku">SKU: {item.sku}</div>
+								</div>
+
+								<div className="order-item-qty">
+									{item.quantity} × {formatPrice(item.price_minor, order.currency)}
+								</div>
+
+								<div className="order-item-sum">
+									{formatPrice(item.price_minor * item.quantity, order.currency)}
+								</div>
+							</div>
 						))}
-					</tbody>
-				</table>
+					</div>
+				)}
+
+				<div className="order-total-row">
+					<span>Итого</span>
+					<strong>{formatPrice(order.total_minor, order.currency)}</strong>
+				</div>
 			</div>
 		</section>
-	);
-}
-
-function LoginPrompt({ text, onNavigate }: { text: string; onNavigate: (route: Route) => void }) {
-	return (
-		<div className="card auth-card">
-			<p>{text}</p>
-			<button className="button primary" onClick={() => onNavigate({ page: 'login' })}>
-				Войти или зарегистрироваться
-			</button>
-		</div>
 	);
 }

@@ -19,6 +19,14 @@ export interface AdminUser {
 	updated_at: string;
 }
 
+export interface ProductImage {
+	id: number;
+	url: string;
+	alt?: string | null;
+	position: number;
+	is_primary: boolean;
+}
+
 export interface Category {
 	id: number;
 	name: string;
@@ -46,6 +54,7 @@ export interface AdminProduct {
 	attributes: Record<string, unknown>;
 	stock_quantity: number;
 	is_active: boolean;
+	primary_image_url?: string | null;
 	created_at: string;
 	updated_at: string;
 }

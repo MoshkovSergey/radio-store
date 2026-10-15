@@ -5,6 +5,7 @@ import type {
 	Category,
 	CategoryPayload,
 	Order,
+	ProductImage,
 	ProductPayload,
 	User,
 } from './types';
@@ -27,6 +28,18 @@ export function clearToken(): void {
 
 export function getToken(): string {
 	return token;
+}
+
+export function resolveMediaUrl(path: string | null | undefined): string {
+	if (!path) {
+		return '';
+	}
+
+	if (path.startsWith('http://') || path.startsWith('https://')) {
+		return path;
+	}
+
+	return `${API_URL}${path}`;
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -63,6 +76,41 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 	if (response.status === 204) {
 		return undefined as T;
+	}
+
+	return (await response.json()) as T;
+}
+
+async function uploadRequest<T>(path: string, formData: FormData): Promise<T> {
+	const headers = new Headers();
+
+	if (token) {
+		headers.set('Authorization', `Bearer ${token}`);
+	}
+
+	const response = await fetch(`${API_URL}${path}`, {
+		method: 'POST',
+		headers,
+		body: formData,
+	});
+
+	if (!response.ok) {
+		if (response.status === 401) {
+			clearToken();
+		}
+
+		let message = `Upload failed with status ${response.status}`;
+
+		try {
+			const body = (await response.json()) as { error?: string };
+			if (body.error) {
+				message = body.error;
+			}
+		} catch {
+			// ignore json parse error
+		}
+
+		throw new Error(message);
 	}
 
 	return (await response.json()) as T;
@@ -105,6 +153,35 @@ export const api = {
 		});
 	},
 
+	listProductImages(productId: number): Promise<ProductImage[]> {
+		return request<ProductImage[]>(`/api/v1/admin/products/${productId}/images`);
+	},
+
+	uploadProductImage(productId: number, file: File, alt?: string): Promise<ProductImage> {
+		const formData = new FormData();
+		formData.append('file', file);
+
+		if (alt && alt.trim()) {
+			formData.append('alt', alt.trim());
+		}
+
+		return uploadRequest<ProductImage>(`/api/v1/admin/products/${productId}/images`, formData);
+	},
+
+	deleteProductImage(productId: number, imageId: number): Promise<{ message: string }> {
+		return request<{ message: string }>(
+			`/api/v1/admin/products/${productId}/images/${imageId}`,
+			{ method: 'DELETE' },
+		);
+	},
+
+	setPrimaryProductImage(productId: number, imageId: number): Promise<ProductImage> {
+		return request<ProductImage>(
+			`/api/v1/admin/products/${productId}/images/${imageId}/primary`,
+			{ method: 'PATCH' },
+		);
+	},
+
 	listCategories(): Promise<Category[]> {
 		return request<Category[]>('/api/v1/admin/categories');
 	},
@@ -131,6 +208,10 @@ export const api = {
 
 	listOrders(): Promise<Order[]> {
 		return request<Order[]>('/api/v1/admin/orders');
+	},
+
+	getNewOrdersCount(): Promise<{ count: number }> {
+		return request<{ count: number }>('/api/v1/admin/orders/new-count');
 	},
 
 	getOrder(id: number): Promise<Order> {

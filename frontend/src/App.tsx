@@ -1,12 +1,13 @@
-import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 
-import { api, clearToken, getToken, setToken } from './api';
+import { api, clearToken, getToken, resolveMediaUrl, setToken } from './api';
 import type {
 	AdminProduct,
 	AdminUser,
 	Category,
 	CategoryPayload,
 	Order,
+	ProductImage,
 	ProductPayload,
 	User,
 } from './types';
@@ -19,6 +20,8 @@ const ORDER_STATUSES = [
 	'completed',
 	'cancelled',
 ] as const;
+
+const NEW_ORDERS_POLL_INTERVAL_MS = 15000;
 
 function formatPrice(minor: number, currency: string): string {
 	return `${(minor / 100).toFixed(2)} ${currency}`;
@@ -198,6 +201,28 @@ type Tab = 'products' | 'categories' | 'orders' | 'users';
 
 function AdminPanel({ user, onLogout }: { user: User; onLogout: () => void }) {
 	const [tab, setTab] = useState<Tab>('products');
+	const [newOrdersCount, setNewOrdersCount] = useState(0);
+
+	const refreshNewOrdersCount = useCallback(async () => {
+		try {
+			const response = await api.getNewOrdersCount();
+			setNewOrdersCount(response.count);
+		} catch {
+			// Ошибки фонового опроса намеренно игнорируем.
+		}
+	}, []);
+
+	useEffect(() => {
+		void refreshNewOrdersCount();
+
+		const interval = window.setInterval(() => {
+			void refreshNewOrdersCount();
+		}, NEW_ORDERS_POLL_INTERVAL_MS);
+
+		return () => {
+			window.clearInterval(interval);
+		};
+	}, [refreshNewOrdersCount]);
 
 	return (
 		<div className="app-shell">
@@ -229,6 +254,11 @@ function AdminPanel({ user, onLogout }: { user: User; onLogout: () => void }) {
 					onClick={() => setTab('orders')}
 				>
 					Заказы
+					{newOrdersCount > 0 ? (
+						<span className="tab-badge">
+							{newOrdersCount > 99 ? '99+' : newOrdersCount}
+						</span>
+					) : null}
 				</button>
 				<button
 					className={tab === 'users' ? 'tab active' : 'tab'}
@@ -241,7 +271,9 @@ function AdminPanel({ user, onLogout }: { user: User; onLogout: () => void }) {
 			<main className="content">
 				{tab === 'products' ? <ProductsTab /> : null}
 				{tab === 'categories' ? <CategoriesTab /> : null}
-				{tab === 'orders' ? <OrdersTab /> : null}
+				{tab === 'orders' ? (
+					<OrdersTab onStatusChanged={refreshNewOrdersCount} />
+				) : null}
 				{tab === 'users' ? <UsersTab /> : null}
 			</main>
 		</div>
@@ -255,6 +287,7 @@ function ProductsTab() {
 	const [error, setError] = useState('');
 	const [showForm, setShowForm] = useState(false);
 	const [editingProduct, setEditingProduct] = useState<AdminProduct | null>(null);
+	const [imagesProductId, setImagesProductId] = useState<number | null>(null);
 
 	const load = useCallback(async () => {
 		setLoading(true);
@@ -343,10 +376,19 @@ function ProductsTab() {
 				</div>
 			) : null}
 
+			{imagesProductId !== null ? (
+				<ProductImagesPanel
+					productId={imagesProductId}
+					onClose={() => setImagesProductId(null)}
+					onChanged={() => void load()}
+				/>
+			) : null}
+
 			<div className="card">
 				<table className="table">
 					<thead>
 						<tr>
+							<th>Фото</th>
 							<th>ID</th>
 							<th>Название</th>
 							<th>Категория</th>
@@ -360,6 +402,17 @@ function ProductsTab() {
 					<tbody>
 						{products.map((product) => (
 							<tr key={product.id}>
+								<td>
+									{product.primary_image_url ? (
+										<img
+											className="table-thumb"
+											src={resolveMediaUrl(product.primary_image_url)}
+											alt={product.name}
+										/>
+									) : (
+										<div className="table-thumb placeholder">нет</div>
+									)}
+								</td>
 								<td>{product.id}</td>
 								<td>
 									<div>{product.name}</div>
@@ -387,6 +440,9 @@ function ProductsTab() {
 										>
 											Изменить
 										</button>
+										<button className="button" onClick={() => setImagesProductId(product.id)}>
+											Фото
+										</button>
 										<button className="button" onClick={() => void toggleActive(product)}>
 											{product.is_active ? 'Выключить' : 'Включить'}
 										</button>
@@ -398,6 +454,172 @@ function ProductsTab() {
 				</table>
 			</div>
 		</section>
+	);
+}
+
+function ProductImagesPanel({
+	productId,
+	onClose,
+	onChanged,
+}: {
+	productId: number;
+	onClose: () => void;
+	onChanged: () => void;
+}) {
+	const fileInputRef = useRef<HTMLInputElement>(null);
+	const [images, setImages] = useState<ProductImage[]>([]);
+	const [loading, setLoading] = useState(true);
+	const [error, setError] = useState('');
+	const [uploading, setUploading] = useState(false);
+	const [selectedFile, setSelectedFile] = useState<File | null>(null);
+	const [alt, setAlt] = useState('');
+
+	const load = useCallback(async () => {
+		setLoading(true);
+		setError('');
+
+		try {
+			const response = await api.listProductImages(productId);
+			setImages(response);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : 'Не удалось загрузить фотографии');
+		} finally {
+			setLoading(false);
+		}
+	}, [productId]);
+
+	useEffect(() => {
+		void load();
+	}, [load]);
+
+	async function handleUpload() {
+		if (!selectedFile) {
+			setError('Выберите файл изображения');
+			return;
+		}
+
+		setUploading(true);
+		setError('');
+
+		try {
+			await api.uploadProductImage(productId, selectedFile, alt);
+			setSelectedFile(null);
+			setAlt('');
+
+			if (fileInputRef.current) {
+				fileInputRef.current.value = '';
+			}
+
+			await load();
+			onChanged();
+		} catch (err) {
+			setError(err instanceof Error ? err.message : 'Не удалось загрузить изображение');
+		} finally {
+			setUploading(false);
+		}
+	}
+
+	async function handleDelete(imageId: number) {
+		if (!confirm('Удалить это изображение?')) {
+			return;
+		}
+
+		setError('');
+
+		try {
+			await api.deleteProductImage(productId, imageId);
+			await load();
+			onChanged();
+		} catch (err) {
+			setError(err instanceof Error ? err.message : 'Не удалось удалить изображение');
+		}
+	}
+
+	async function handleSetPrimary(imageId: number) {
+		setError('');
+
+		try {
+			await api.setPrimaryProductImage(productId, imageId);
+			await load();
+			onChanged();
+		} catch (err) {
+			setError(err instanceof Error ? err.message : 'Не удалось сделать фото главным');
+		}
+	}
+
+	return (
+		<div className="card">
+			<div className="panel-head">
+				<h3>Фотографии товара #{productId}</h3>
+				<button className="button" onClick={onClose}>
+					Закрыть
+				</button>
+			</div>
+
+			<div className="upload-row">
+				<input
+					ref={fileInputRef}
+					type="file"
+					accept="image/jpeg,image/png,image/webp,image/gif"
+					onChange={(event) => {
+						const file = event.target.files?.[0] ?? null;
+						setSelectedFile(file);
+					}}
+				/>
+				<input
+					className="input"
+					placeholder="Alt-текст (необязательно)"
+					value={alt}
+					onChange={(event) => setAlt(event.target.value)}
+				/>
+				<button
+					className="button primary"
+					disabled={uploading || !selectedFile}
+					onClick={() => void handleUpload()}
+				>
+					{uploading ? 'Загрузка...' : 'Загрузить'}
+				</button>
+			</div>
+
+			{error ? <div className="error">{error}</div> : null}
+
+			{loading ? (
+				<p>Загрузка фотографий...</p>
+			) : images.length === 0 ? (
+				<p className="muted">Фотографий пока нет.</p>
+			) : (
+				<div className="image-grid">
+					{images.map((image) => (
+						<div key={image.id} className="image-tile">
+							<img
+								className="image-thumb"
+								src={resolveMediaUrl(image.url)}
+								alt={image.alt ?? ''}
+							/>
+
+							{image.is_primary ? <span className="image-badge-primary">Главное</span> : null}
+
+							<div className="image-actions">
+								{!image.is_primary ? (
+									<button
+										className="button"
+										onClick={() => void handleSetPrimary(image.id)}
+									>
+										Сделать главным
+									</button>
+								) : null}
+								<button
+									className="button danger"
+									onClick={() => void handleDelete(image.id)}
+								>
+									Удалить
+								</button>
+							</div>
+						</div>
+					))}
+				</div>
+			)}
+		</div>
 	);
 }
 
@@ -610,6 +832,12 @@ function ProductForm({
 				/>
 				<label htmlFor="product-active">Товар активен</label>
 			</div>
+
+			{initial ? (
+				<p className="small muted" style={{ marginTop: 12 }}>
+					Фотографии добавляются после сохранения товара — кнопка «Фото» в таблице.
+				</p>
+			) : null}
 
 			{error ? <div className="error">{error}</div> : null}
 
@@ -862,7 +1090,7 @@ function CategoryForm({
 	);
 }
 
-function OrdersTab() {
+function OrdersTab({ onStatusChanged }: { onStatusChanged?: () => void }) {
 	const [orders, setOrders] = useState<Order[]>([]);
 	const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
 	const [loading, setLoading] = useState(true);
@@ -899,6 +1127,8 @@ function OrdersTab() {
 		try {
 			await api.updateOrderStatus(order.id, status);
 			await load();
+
+			onStatusChanged?.();
 
 			setSelectedOrder((previous) =>
 				previous && previous.id === order.id ? { ...previous, status } : previous,

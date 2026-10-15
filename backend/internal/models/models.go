@@ -12,21 +12,31 @@ type Category struct {
 	ParentID *int64 `json:"parent_id,omitempty"`
 }
 
+type ProductImage struct {
+	ID        int64   `json:"id"`
+	URL       string  `json:"url"`
+	Alt       *string `json:"alt,omitempty"`
+	Position  int     `json:"position"`
+	IsPrimary bool    `json:"is_primary"`
+}
+
 type Product struct {
-	ID            int64           `json:"id"`
-	CategoryID    int64           `json:"category_id"`
-	Name          string          `json:"name"`
-	Slug          string          `json:"slug"`
-	SKU           string          `json:"sku"`
-	Manufacturer  *string         `json:"manufacturer,omitempty"`
-	Description   *string         `json:"description,omitempty"`
-	PriceMinor    int64           `json:"price_minor"`
-	Currency      string          `json:"currency"`
-	Attributes    json.RawMessage `json:"attributes"`
-	StockQuantity int             `json:"stock_quantity"`
-	IsActive      bool            `json:"is_active"`
-	CreatedAt     time.Time       `json:"created_at"`
-	UpdatedAt     time.Time       `json:"updated_at"`
+	ID             int64           `json:"id"`
+	CategoryID     int64           `json:"category_id"`
+	Name           string          `json:"name"`
+	Slug           string          `json:"slug"`
+	SKU            string          `json:"sku"`
+	Manufacturer   *string         `json:"manufacturer,omitempty"`
+	Description    *string         `json:"description,omitempty"`
+	PriceMinor     int64           `json:"price_minor"`
+	Currency       string          `json:"currency"`
+	Attributes     json.RawMessage `json:"attributes"`
+	StockQuantity  int             `json:"stock_quantity"`
+	IsActive       bool            `json:"is_active"`
+	PrimaryImageURL *string        `json:"primary_image_url,omitempty"`
+	Images         []ProductImage  `json:"images,omitempty"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
 type User struct {

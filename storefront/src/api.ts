@@ -28,6 +28,18 @@ export function getToken(): string {
 	return token;
 }
 
+export function resolveMediaUrl(path: string | null | undefined): string {
+	if (!path) {
+		return '';
+	}
+
+	if (path.startsWith('http://') || path.startsWith('https://')) {
+		return path;
+	}
+
+	return `${API_URL}${path}`;
+}
+
 function emitUnauthorized(): void {
 	clearToken();
 	window.dispatchEvent(new Event('auth:logout'));

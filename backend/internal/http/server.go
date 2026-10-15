@@ -12,17 +12,24 @@ import (
 type Server struct {
 	db        *pgxpool.Pool
 	jwtSecret string
+	uploadDir string
 }
 
-func New(db *pgxpool.Pool, jwtSecret string) http.Handler {
+func New(db *pgxpool.Pool, jwtSecret string, uploadDir string) http.Handler {
 	s := &Server{
 		db:        db,
 		jwtSecret: jwtSecret,
+		uploadDir: uploadDir,
 	}
 
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /healthz", s.health)
+
+	mux.HandleFunc("GET /robots.txt", s.robotsTxt)
+	mux.HandleFunc("GET /sitemap.xml", s.sitemapXML)
+
+	mux.HandleFunc("GET /media/products/{filename}", s.serveProductImage)
 
 	mux.HandleFunc("GET /api/v1/categories", s.listCategories)
 	mux.HandleFunc("GET /api/v1/products", s.listProducts)
@@ -46,12 +53,18 @@ func New(db *pgxpool.Pool, jwtSecret string) http.Handler {
 	mux.HandleFunc("PATCH /api/v1/admin/products/{id}", s.adminMiddleware(s.adminUpdateProduct))
 	mux.HandleFunc("PATCH /api/v1/admin/products/{id}/stock", s.adminMiddleware(s.adminSetStock))
 
+	mux.HandleFunc("GET /api/v1/admin/products/{id}/images", s.adminMiddleware(s.adminListProductImages))
+	mux.HandleFunc("POST /api/v1/admin/products/{id}/images", s.adminMiddleware(s.adminUploadProductImage))
+	mux.HandleFunc("DELETE /api/v1/admin/products/{id}/images/{imageId}", s.adminMiddleware(s.adminDeleteProductImage))
+	mux.HandleFunc("PATCH /api/v1/admin/products/{id}/images/{imageId}/primary", s.adminMiddleware(s.adminSetPrimaryProductImage))
+
 	mux.HandleFunc("GET /api/v1/admin/categories", s.adminMiddleware(s.adminListCategories))
 	mux.HandleFunc("POST /api/v1/admin/categories", s.adminMiddleware(s.adminCreateCategory))
 	mux.HandleFunc("PATCH /api/v1/admin/categories/{id}", s.adminMiddleware(s.adminUpdateCategory))
 	mux.HandleFunc("DELETE /api/v1/admin/categories/{id}", s.adminMiddleware(s.adminDeleteCategory))
 
 	mux.HandleFunc("GET /api/v1/admin/orders", s.adminMiddleware(s.listOrders))
+	mux.HandleFunc("GET /api/v1/admin/orders/new-count", s.adminMiddleware(s.adminNewOrdersCount))
 	mux.HandleFunc("PATCH /api/v1/admin/orders/{id}/status", s.adminMiddleware(s.adminUpdateOrderStatus))
 
 	mux.HandleFunc("GET /api/v1/admin/users", s.adminMiddleware(s.adminListUsers))

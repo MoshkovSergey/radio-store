@@ -77,7 +77,7 @@ func (s *Server) listProducts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if search := strings.TrimSpace(q.Get("search")); search != "" {
-		escaped := strings.NewReplacer("%", `\%`, "_", `\_`).Replace(search)
+		escaped := strings.NewReplacer("%", `\%`, `_`, `\_`).Replace(search)
 		pattern := "%" + escaped + "%"
 		args = append(args, pattern)
 		n := len(args)
@@ -111,6 +111,13 @@ func (s *Server) listProducts(w http.ResponseWriter, r *http.Request) {
 			p.attributes,
 			COALESCE(s.quantity, 0) AS stock_quantity,
 			p.is_active,
+			(
+				SELECT pi.url
+				FROM product_images pi
+				WHERE pi.product_id = p.id
+				ORDER BY pi.is_primary DESC, pi.position ASC, pi.id ASC
+				LIMIT 1
+			) AS primary_image_url,
 			p.created_at,
 			p.updated_at
 		FROM products p
@@ -148,6 +155,7 @@ func (s *Server) listProducts(w http.ResponseWriter, r *http.Request) {
 			&p.Attributes,
 			&p.StockQuantity,
 			&p.IsActive,
+			&p.PrimaryImageURL,
 			&p.CreatedAt,
 			&p.UpdatedAt,
 		); err != nil {
@@ -191,6 +199,13 @@ func (s *Server) getProduct(w http.ResponseWriter, r *http.Request) {
 			p.attributes,
 			COALESCE(s.quantity, 0) AS stock_quantity,
 			p.is_active,
+			(
+				SELECT pi.url
+				FROM product_images pi
+				WHERE pi.product_id = p.id
+				ORDER BY pi.is_primary DESC, pi.position ASC, pi.id ASC
+				LIMIT 1
+			) AS primary_image_url,
 			p.created_at,
 			p.updated_at
 		FROM products p
@@ -214,6 +229,7 @@ func (s *Server) getProduct(w http.ResponseWriter, r *http.Request) {
 		&p.Attributes,
 		&p.StockQuantity,
 		&p.IsActive,
+		&p.PrimaryImageURL,
 		&p.CreatedAt,
 		&p.UpdatedAt,
 	)
@@ -227,6 +243,42 @@ func (s *Server) getProduct(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to load product")
 		return
 	}
+
+	imageRows, err := s.db.Query(
+		r.Context(),
+		`
+		SELECT id, url, alt, position, is_primary
+		FROM product_images
+		WHERE product_id = $1
+		ORDER BY is_primary DESC, position ASC, id ASC
+		`,
+		p.ID,
+	)
+	if err != nil {
+		slog.Error("failed to query product images", "product_id", p.ID, "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to load product images")
+		return
+	}
+	defer imageRows.Close()
+
+	images := make([]models.ProductImage, 0, 8)
+	for imageRows.Next() {
+		var image models.ProductImage
+		if err := imageRows.Scan(&image.ID, &image.URL, &image.Alt, &image.Position, &image.IsPrimary); err != nil {
+			slog.Error("failed to scan product image", "product_id", p.ID, "error", err)
+			writeError(w, http.StatusInternalServerError, "failed to load product images")
+			return
+		}
+		images = append(images, image)
+	}
+
+	if err := imageRows.Err(); err != nil {
+		slog.Error("product image rows error", "product_id", p.ID, "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to load product images")
+		return
+	}
+
+	p.Images = images
 
 	writeJSON(w, http.StatusOK, p)
 }

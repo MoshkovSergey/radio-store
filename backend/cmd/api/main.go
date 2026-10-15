@@ -25,6 +25,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := os.MkdirAll(cfg.UploadDir, 0o755); err != nil {
+		logger.Error("failed to create upload dir", "error", err)
+		os.Exit(1)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -35,7 +40,7 @@ func main() {
 	}
 	defer pool.Close()
 
-	handler := apihttp.New(pool, cfg.AuthJWTSecret)
+	handler := apihttp.New(pool, cfg.AuthJWTSecret, cfg.UploadDir)
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
