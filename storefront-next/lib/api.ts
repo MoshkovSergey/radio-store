@@ -5,6 +5,7 @@ import type {
   CreateOrderResponse,
   Order,
   Product,
+  ProductPrimaryImage,
   ProductWithCategory,
   User,
 } from './types';
@@ -261,15 +262,19 @@ export const clientApi = {
     });
   },
 
-  createOrder(
-    shippingAddress: string,
-    comment: string,
-  ): Promise<CreateOrderResponse> {
+  createOrder(payload: {
+    shippingAddress: string;
+    comment: string;
+    customerEmail: string;
+    customerPhone: string;
+  }): Promise<CreateOrderResponse> {
     return clientFetch<CreateOrderResponse>('/api/v1/orders', {
       method: 'POST',
       body: JSON.stringify({
-        shipping_address: shippingAddress,
-        comment,
+        shipping_address: payload.shippingAddress,
+        comment: payload.comment,
+        customer_email: payload.customerEmail,
+        customer_phone: payload.customerPhone,
       }),
     });
   },
@@ -280,5 +285,20 @@ export const clientApi = {
 
   getOrder(id: number): Promise<Order> {
     return clientFetch<Order>(`/api/v1/orders/${id}`);
+  },
+
+  getProductsPrimaryImages(ids: number[]): Promise<ProductPrimaryImage[]> {
+    const uniqueIds = Array.from(new Set(ids.filter((id) => id > 0)));
+
+    if (uniqueIds.length === 0) {
+      return Promise.resolve([]);
+    }
+
+    const query = new URLSearchParams();
+    query.set('ids', uniqueIds.join(','));
+
+    return clientFetch<ProductPrimaryImage[]>(
+      `/api/v1/products/images?${query.toString()}`,
+    );
   },
 };

@@ -5,6 +5,8 @@ import type {
 	Category,
 	CategoryPayload,
 	Order,
+	OrderContact,
+	OrderInvoice,
 	ProductImage,
 	ProductPayload,
 	User,
@@ -28,6 +30,10 @@ export function clearToken(): void {
 
 export function getToken(): string {
 	return token;
+}
+
+export function getApiUrl(): string {
+	return API_URL;
 }
 
 export function resolveMediaUrl(path: string | null | undefined): string {
@@ -114,6 +120,37 @@ async function uploadRequest<T>(path: string, formData: FormData): Promise<T> {
 	}
 
 	return (await response.json()) as T;
+}
+
+async function textRequest(path: string): Promise<string> {
+	const headers = new Headers();
+
+	if (token) {
+		headers.set('Authorization', `Bearer ${token}`);
+	}
+
+	const response = await fetch(`${API_URL}${path}`, { headers });
+
+	if (!response.ok) {
+		if (response.status === 401) {
+			clearToken();
+		}
+
+		let message = `Request failed with status ${response.status}`;
+
+		try {
+			const body = (await response.json()) as { error?: string };
+			if (body.error) {
+				message = body.error;
+			}
+		} catch {
+			// ignore
+		}
+
+		throw new Error(message);
+	}
+
+	return response.text();
 }
 
 export const api = {
@@ -214,6 +251,19 @@ export const api = {
 		return request<{ count: number }>('/api/v1/admin/orders/new-count');
 	},
 
+	getOrderContacts(orderIds: number[]): Promise<OrderContact[]> {
+		const unique = Array.from(new Set(orderIds.filter((id) => id > 0)));
+
+		if (unique.length === 0) {
+			return Promise.resolve([]);
+		}
+
+		const query = new URLSearchParams();
+		query.set('ids', unique.join(','));
+
+		return request<OrderContact[]>(`/api/v1/admin/orders/contacts?${query.toString()}`);
+	},
+
 	getOrder(id: number): Promise<Order> {
 		return request<Order>(`/api/v1/orders/${id}`);
 	},
@@ -223,6 +273,35 @@ export const api = {
 			method: 'PATCH',
 			body: JSON.stringify({ status }),
 		});
+	},
+
+	listInvoicesByOrders(orderIds: number[]): Promise<OrderInvoice[]> {
+		const unique = Array.from(new Set(orderIds.filter((id) => id > 0)));
+
+		if (unique.length === 0) {
+			return Promise.resolve([]);
+		}
+
+		const query = new URLSearchParams();
+		query.set('order_ids', unique.join(','));
+
+		return request<OrderInvoice[]>(`/api/v1/admin/invoices?${query.toString()}`);
+	},
+
+	createOrderInvoice(orderId: number): Promise<OrderInvoice> {
+		return request<OrderInvoice>(`/api/v1/admin/orders/${orderId}/invoices`, {
+			method: 'POST',
+		});
+	},
+
+	sendInvoice(invoiceId: number): Promise<OrderInvoice> {
+		return request<OrderInvoice>(`/api/v1/admin/invoices/${invoiceId}/send`, {
+			method: 'POST',
+		});
+	},
+
+	getInvoiceHtml(invoiceId: number): Promise<string> {
+		return textRequest(`/api/v1/admin/invoices/${invoiceId}/view`);
 	},
 
 	listUsers(params: {

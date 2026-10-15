@@ -163,7 +163,15 @@ img {
   width: 100%;
   max-width: 1440px;
   margin: 0 auto;
-  padding: 20px;
+  padding: 28px 20px 48px;
+}
+
+/* Единый вертикальный ритм между соседними секциями внутри main.
+   Безопасно для страниц товара/категории/поиска/корзины/заказов,
+   потому что там ровно одна <section>. На главной правило разделяет
+   hero, блок категорий и блок новинок. */
+.main section + section {
+  margin-top: 28px;
 }
 
 .footer {
@@ -370,7 +378,7 @@ img {
   background: linear-gradient(135deg, #0b5cff 0%, #4f46e5 45%, #7c3aed 100%);
   color: #fff;
   padding: 34px;
-  margin-bottom: 18px;
+  margin-bottom: 24px;
   box-shadow: 0 18px 40px rgba(11, 92, 255, 0.18);
 }
 
@@ -616,6 +624,7 @@ img {
   font-size: 14px;
   align-items: center;
   flex-wrap: wrap;
+  margin: 0 0 20px;
 }
 
 .breadcrumbs a {
@@ -1361,7 +1370,7 @@ img {
 
 @media (max-width: 640px) {
   .main {
-    padding: 14px;
+    padding: 20px 14px 36px;
   }
 
   .hero {

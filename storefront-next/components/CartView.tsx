@@ -1,14 +1,39 @@
 'use client';
 
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from 'react';
 
 import { useAuth } from '@/lib/auth-context';
 import { clientApi, resolveMediaUrl } from '@/lib/api';
 import { formatPrice, getInitials } from '@/lib/format';
 import type { Cart } from '@/lib/types';
 
-import Image from 'next/image';
+const EMAIL_REGEXP = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function countDigits(value: string): number {
+  let count = 0;
+
+  for (const char of value) {
+    if (char >= '0' && char <= '9') {
+      count += 1;
+    }
+  }
+
+  return count;
+}
+
+interface FieldErrors {
+  address?: string;
+  email?: string;
+  phone?: string;
+}
 
 export function CartView() {
   const router = useRouter();
@@ -18,8 +43,23 @@ export function CartView() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [shippingAddress, setShippingAddress] = useState('');
+  const [customerEmail, setCustomerEmail] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
   const [comment, setComment] = useState('');
   const [processing, setProcessing] = useState(false);
+  const [images, setImages] = useState<Record<number, string>>({});
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+
+  const prefilledEmailRef = useRef(false);
+
+  // Предзаполняем email из профиля один раз, чтобы не переписывать
+  // поле, когда пользователь начал его редактировать или очистил.
+  useEffect(() => {
+    if (user && !prefilledEmailRef.current) {
+      prefilledEmailRef.current = true;
+      setCustomerEmail(user.email);
+    }
+  }, [user]);
 
   const loadCart = useCallback(async () => {
     if (!user) {
@@ -43,6 +83,41 @@ export function CartView() {
   useEffect(() => {
     void loadCart();
   }, [loadCart]);
+
+  useEffect(() => {
+    const items = cart?.items ?? [];
+    const ids = items.map((item) => item.product_id);
+
+    if (ids.length === 0) {
+      setImages({});
+      return;
+    }
+
+    let cancelled = false;
+
+    clientApi
+      .getProductsPrimaryImages(ids)
+      .then((response) => {
+        if (cancelled) {
+          return;
+        }
+
+        const map: Record<number, string> = {};
+
+        for (const entry of response) {
+          map[entry.product_id] = entry.primary_image_url;
+        }
+
+        setImages(map);
+      })
+      .catch(() => {
+        // Фото не критичны: при ошибке останутся плейсхолдеры.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cart]);
 
   async function changeQuantity(productId: number, nextQuantity: number) {
     if (nextQuantity < 1) {
@@ -76,9 +151,26 @@ export function CartView() {
     }
 
     const address = shippingAddress.trim();
+    const email = customerEmail.trim();
+    const phone = customerPhone.trim();
+
+    const errors: FieldErrors = {};
 
     if (!address) {
-      setError('Укажите адрес доставки');
+      errors.address = 'Укажите адрес доставки';
+    }
+
+    if (!EMAIL_REGEXP.test(email)) {
+      errors.email = 'Укажите корректный email для отправки документов';
+    }
+
+    if (countDigits(phone) < 6) {
+      errors.phone = 'Укажите корректный номер телефона';
+    }
+
+    setFieldErrors(errors);
+
+    if (Object.keys(errors).length > 0) {
       return;
     }
 
@@ -86,15 +178,20 @@ export function CartView() {
     setError('');
 
     try {
-      const result = await clientApi.createOrder(address, comment.trim());
+      const result = await clientApi.createOrder({
+        shippingAddress: address,
+        comment: comment.trim(),
+        customerEmail: email,
+        customerPhone: phone,
+      });
       await refreshCartCount();
       setShippingAddress('');
       setComment('');
+      setProcessing(false);
       router.push(`/orders/${result.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось оформить заказ');
-    } finally {
       setProcessing(false);
+      setError(err instanceof Error ? err.message : 'Не удалось оформить заказ');
     }
   }
 
@@ -154,11 +251,26 @@ export function CartView() {
       <div className="cart-layout">
         <div className="cart-items">
           {cart.items.map((item) => {
-            const imageUrl = resolveMediaUrl(null); // корзина не содержит фото, оставляем инициалы
+            const imageUrl = resolveMediaUrl(images[item.product_id]);
 
             return (
               <div key={item.product_id} className="card cart-item">
-                <div className="cart-item-image">{getInitials(item.name)}</div>
+                <div
+                  className="cart-item-image"
+                  style={{ position: 'relative', overflow: 'hidden' }}
+                >
+                  {imageUrl ? (
+                    <Image
+                      src={imageUrl}
+                      alt={item.name}
+                      fill
+                      sizes="92px"
+                      style={{ objectFit: 'cover' }}
+                    />
+                  ) : (
+                    getInitials(item.name)
+                  )}
+                </div>
 
                 <div className="cart-item-info">
                   <div className="cart-item-name">{item.name}</div>
@@ -234,15 +346,59 @@ export function CartView() {
             <strong>{formatPrice(cart.total_minor, cart.currency)}</strong>
           </div>
 
-          <form className="checkout-form" onSubmit={handleCheckout}>
+          <form className="checkout-form" onSubmit={handleCheckout} noValidate>
             <div className="field">
               <label>Адрес доставки</label>
               <input
                 className="input"
                 value={shippingAddress}
                 onChange={(event) => setShippingAddress(event.target.value)}
-                required
               />
+              {fieldErrors.address ? (
+                <span style={{ color: 'var(--danger)', fontSize: 13 }}>
+                  {fieldErrors.address}
+                </span>
+              ) : null}
+            </div>
+
+            <div className="field">
+              <label>Email для документов</label>
+              <input
+                className="input"
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                placeholder="you@example.com"
+                value={customerEmail}
+                onChange={(event) => setCustomerEmail(event.target.value)}
+              />
+              {fieldErrors.email ? (
+                <span style={{ color: 'var(--danger)', fontSize: 13 }}>
+                  {fieldErrors.email}
+                </span>
+              ) : (
+                <span className="muted" style={{ fontSize: 12 }}>
+                  На этот адрес будем отправлять счета и документы.
+                </span>
+              )}
+            </div>
+
+            <div className="field">
+              <label>Телефон</label>
+              <input
+                className="input"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                placeholder="+7 900 000-00-00"
+                value={customerPhone}
+                onChange={(event) => setCustomerPhone(event.target.value)}
+              />
+              {fieldErrors.phone ? (
+                <span style={{ color: 'var(--danger)', fontSize: 13 }}>
+                  {fieldErrors.phone}
+                </span>
+              ) : null}
             </div>
 
             <div className="field">

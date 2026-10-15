@@ -40,7 +40,7 @@ func main() {
 	}
 	defer pool.Close()
 
-	handler := apihttp.New(pool, cfg.AuthJWTSecret, cfg.UploadDir)
+	handler := apihttp.New(pool, cfg.AuthJWTSecret, cfg.UploadDir, cfg.SMTP)
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,

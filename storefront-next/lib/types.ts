@@ -36,6 +36,11 @@ export interface ProductWithCategory extends Product {
   category?: Category | null;
 }
 
+export interface ProductPrimaryImage {
+  product_id: number;
+  primary_image_url: string;
+}
+
 export interface User {
   id: number;
   email: string;
@@ -81,6 +86,8 @@ export interface Order {
   currency: string;
   shipping_address?: string | null;
   comment?: string | null;
+  customer_email?: string | null;
+  customer_phone?: string | null;
   created_at: string;
   updated_at: string;
   items?: OrderItem[];

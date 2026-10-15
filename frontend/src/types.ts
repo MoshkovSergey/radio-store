@@ -89,7 +89,28 @@ export interface Order {
 	currency: string;
 	shipping_address?: string | null;
 	comment?: string | null;
+	customer_email?: string | null;
+	customer_phone?: string | null;
 	created_at: string;
 	updated_at: string;
 	items?: OrderItem[];
+}
+
+export interface OrderContact {
+	order_id: number;
+	customer_email?: string | null;
+	customer_phone?: string | null;
+}
+
+export interface OrderInvoice {
+	id: number;
+	order_id: number;
+	number: string;
+	amount_minor: number;
+	currency: string;
+	status: string;
+	issued_at: string;
+	sent_at?: string | null;
+	created_at: string;
+	updated_at: string;
 }

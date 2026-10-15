@@ -180,6 +180,12 @@ button {
 	background: #fff;
 }
 
+.button.small {
+	padding: 6px 9px;
+	font-size: 12px;
+	border-radius: 7px;
+}
+
 .button.primary {
 	background: #111827;
 	border-color: #111827;
@@ -200,6 +206,10 @@ button {
 
 .muted {
 	color: #6b7280;
+}
+
+.small {
+	font-size: 12px;
 }
 
 .center-screen {
@@ -225,10 +235,6 @@ button {
 .login-form {
 	display: grid;
 	gap: 12px;
-}
-
-.small {
-	font-size: 13px;
 }
 
 .badge {
@@ -340,4 +346,35 @@ button {
 .image-actions .button {
 	padding: 6px 8px;
 	font-size: 12px;
+}
+
+.contact-cell {
+	display: grid;
+	gap: 2px;
+	min-width: 160px;
+}
+
+.invoice-list {
+	display: grid;
+	gap: 8px;
+	min-width: 220px;
+}
+
+.invoice-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	flex-wrap: wrap;
+	border: 1px solid #e5e7eb;
+	border-radius: 8px;
+	padding: 6px 8px;
+}
+
+.invoice-number {
+	font-weight: 600;
+	font-size: 13px;
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
 }

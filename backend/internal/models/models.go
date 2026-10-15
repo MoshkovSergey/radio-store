@@ -21,22 +21,22 @@ type ProductImage struct {
 }
 
 type Product struct {
-	ID             int64           `json:"id"`
-	CategoryID     int64           `json:"category_id"`
-	Name           string          `json:"name"`
-	Slug           string          `json:"slug"`
-	SKU            string          `json:"sku"`
-	Manufacturer   *string         `json:"manufacturer,omitempty"`
-	Description    *string         `json:"description,omitempty"`
-	PriceMinor     int64           `json:"price_minor"`
-	Currency       string          `json:"currency"`
-	Attributes     json.RawMessage `json:"attributes"`
-	StockQuantity  int             `json:"stock_quantity"`
-	IsActive       bool            `json:"is_active"`
-	PrimaryImageURL *string        `json:"primary_image_url,omitempty"`
-	Images         []ProductImage  `json:"images,omitempty"`
-	CreatedAt      time.Time       `json:"created_at"`
-	UpdatedAt      time.Time       `json:"updated_at"`
+	ID              int64           `json:"id"`
+	CategoryID      int64           `json:"category_id"`
+	Name            string          `json:"name"`
+	Slug            string          `json:"slug"`
+	SKU             string          `json:"sku"`
+	Manufacturer    *string         `json:"manufacturer,omitempty"`
+	Description     *string         `json:"description,omitempty"`
+	PriceMinor      int64           `json:"price_minor"`
+	Currency        string          `json:"currency"`
+	Attributes      json.RawMessage `json:"attributes"`
+	StockQuantity   int             `json:"stock_quantity"`
+	IsActive        bool            `json:"is_active"`
+	PrimaryImageURL *string         `json:"primary_image_url,omitempty"`
+	Images          []ProductImage  `json:"images,omitempty"`
+	CreatedAt       time.Time       `json:"created_at"`
+	UpdatedAt       time.Time       `json:"updated_at"`
 }
 
 type User struct {
@@ -79,7 +79,22 @@ type Order struct {
 	Currency        string      `json:"currency"`
 	ShippingAddress *string     `json:"shipping_address,omitempty"`
 	Comment         *string     `json:"comment,omitempty"`
+	CustomerEmail   *string     `json:"customer_email,omitempty"`
+	CustomerPhone   *string     `json:"customer_phone,omitempty"`
 	CreatedAt       time.Time   `json:"created_at"`
 	UpdatedAt       time.Time   `json:"updated_at"`
 	Items           []OrderItem `json:"items,omitempty"`
+}
+
+type OrderInvoice struct {
+	ID          int64      `json:"id"`
+	OrderID     int64      `json:"order_id"`
+	Number      string     `json:"number"`
+	AmountMinor int64      `json:"amount_minor"`
+	Currency    string     `json:"currency"`
+	Status      string     `json:"status"`
+	IssuedAt    time.Time  `json:"issued_at"`
+	SentAt      *time.Time `json:"sent_at,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
 }

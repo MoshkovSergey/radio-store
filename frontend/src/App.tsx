@@ -7,6 +7,8 @@ import type {
 	Category,
 	CategoryPayload,
 	Order,
+	OrderContact,
+	OrderInvoice,
 	ProductImage,
 	ProductPayload,
 	User,
@@ -41,6 +43,27 @@ function roleLabel(role: string): string {
 	}
 
 	return role;
+}
+
+// Русская подпись статуса для отображения. ВАЖНО: value у <option> остаётся
+// английским, потому что бэкенд валидирует статус по английскому белому списку.
+function orderStatusLabel(status: string): string {
+	switch (status) {
+		case 'new':
+			return 'Новый';
+		case 'processing':
+			return 'В обработке';
+		case 'paid':
+			return 'Оплачен';
+		case 'shipped':
+			return 'Отправлен';
+		case 'completed':
+			return 'Завершён';
+		case 'cancelled':
+			return 'Отменён';
+		default:
+			return status;
+	}
 }
 
 function productToPayload(product: AdminProduct): ProductPayload {
@@ -1095,6 +1118,10 @@ function OrdersTab({ onStatusChanged }: { onStatusChanged?: () => void }) {
 	const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState('');
+	const [contacts, setContacts] = useState<Record<number, OrderContact>>({});
+	const [invoices, setInvoices] = useState<Record<number, OrderInvoice[]>>({});
+	const [busyOrderId, setBusyOrderId] = useState<number | null>(null);
+	const [busyInvoiceId, setBusyInvoiceId] = useState<number | null>(null);
 
 	const load = useCallback(async () => {
 		setLoading(true);
@@ -1103,6 +1130,28 @@ function OrdersTab({ onStatusChanged }: { onStatusChanged?: () => void }) {
 		try {
 			const response = await api.listOrders();
 			setOrders(response);
+
+			const orderIds = response.map((order) => order.id);
+
+			const [contactsResponse, invoicesResponse] = await Promise.all([
+				api.getOrderContacts(orderIds).catch(() => [] as OrderContact[]),
+				api.listInvoicesByOrders(orderIds).catch(() => [] as OrderInvoice[]),
+			]);
+
+			const contactsMap: Record<number, OrderContact> = {};
+			for (const item of contactsResponse) {
+				contactsMap[item.order_id] = item;
+			}
+			setContacts(contactsMap);
+
+			const invoicesMap: Record<number, OrderInvoice[]> = {};
+			for (const invoice of invoicesResponse) {
+				if (!invoicesMap[invoice.order_id]) {
+					invoicesMap[invoice.order_id] = [];
+				}
+				invoicesMap[invoice.order_id].push(invoice);
+			}
+			setInvoices(invoicesMap);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : 'Не удалось загрузить заказы');
 		} finally {
@@ -1138,6 +1187,62 @@ function OrdersTab({ onStatusChanged }: { onStatusChanged?: () => void }) {
 		}
 	}
 
+	async function createInvoice(order: Order) {
+		setBusyOrderId(order.id);
+		setError('');
+
+		try {
+			const invoice = await api.createOrderInvoice(order.id);
+			setInvoices((previous) => ({
+				...previous,
+				[order.id]: [...(previous[order.id] ?? []), invoice],
+			}));
+		} catch (err) {
+			setError(err instanceof Error ? err.message : 'Не удалось создать счёт');
+		} finally {
+			setBusyOrderId(null);
+		}
+	}
+
+	async function sendInvoice(invoice: OrderInvoice) {
+		setBusyInvoiceId(invoice.id);
+		setError('');
+
+		try {
+			const updated = await api.sendInvoice(invoice.id);
+			setInvoices((previous) => ({
+				...previous,
+				[invoice.order_id]: (previous[invoice.order_id] ?? []).map((item) =>
+					item.id === updated.id ? updated : item,
+				),
+			}));
+		} catch (err) {
+			setError(err instanceof Error ? err.message : 'Не удалось отправить счёт');
+		} finally {
+			setBusyInvoiceId(null);
+		}
+	}
+
+	async function viewInvoice(invoiceId: number) {
+		setError('');
+
+		try {
+			const html = await api.getInvoiceHtml(invoiceId);
+			const win = window.open('', '_blank');
+
+			if (!win) {
+				setError('Браузер заблокировал новое окно. Разреши всплывающие окна для админки.');
+				return;
+			}
+
+			win.document.open();
+			win.document.write(html);
+			win.document.close();
+		} catch (err) {
+			setError(err instanceof Error ? err.message : 'Не удалось открыть счёт');
+		}
+	}
+
 	if (loading) {
 		return <p>Загрузка заказов...</p>;
 	}
@@ -1163,36 +1268,107 @@ function OrdersTab({ onStatusChanged }: { onStatusChanged?: () => void }) {
 							<th>Сумма</th>
 							<th>Статус</th>
 							<th>Адрес</th>
+							<th>Контакты</th>
+							<th>Счёт</th>
 							<th>Действия</th>
 						</tr>
 					</thead>
 					<tbody>
-						{orders.map((order) => (
-							<tr key={order.id}>
-								<td>{order.id}</td>
-								<td>{formatDate(order.created_at)}</td>
-								<td>{formatPrice(order.total_minor, order.currency)}</td>
-								<td>
-									<select
-										className="select"
-										value={order.status}
-										onChange={(event) => void changeStatus(order, event.target.value)}
-									>
-										{ORDER_STATUSES.map((status) => (
-											<option key={status} value={status}>
-												{status}
-											</option>
-										))}
-									</select>
-								</td>
-								<td>{order.shipping_address ?? '—'}</td>
-								<td>
-									<button className="button" onClick={() => void openOrder(order)}>
-										Открыть
-									</button>
-								</td>
-							</tr>
-						))}
+						{orders.map((order) => {
+							const contact = contacts[order.id];
+							const orderInvoices = invoices[order.id] ?? [];
+							const isProcessing = order.status === 'processing';
+
+							return (
+								<tr key={order.id}>
+									<td>{order.id}</td>
+									<td>{formatDate(order.created_at)}</td>
+									<td>{formatPrice(order.total_minor, order.currency)}</td>
+									<td>
+										<select
+											className="select"
+											style={{ minWidth: 150 }}
+											value={order.status}
+											onChange={(event) => void changeStatus(order, event.target.value)}
+										>
+											{ORDER_STATUSES.map((status) => (
+												<option key={status} value={status}>
+													{orderStatusLabel(status)}
+												</option>
+											))}
+										</select>
+									</td>
+									<td>{order.shipping_address ?? '—'}</td>
+									<td>
+										<div className="contact-cell">
+											<div>{contact?.customer_email || order.customer_email || '—'}</div>
+											<div className="muted small">
+												{contact?.customer_phone || order.customer_phone || '—'}
+											</div>
+										</div>
+									</td>
+									<td>
+										{orderInvoices.length === 0 ? (
+											isProcessing ? (
+												<button
+													className="button small"
+													disabled={busyOrderId === order.id}
+													onClick={() => void createInvoice(order)}
+												>
+													{busyOrderId === order.id ? 'Создание...' : 'Создать счёт'}
+												</button>
+											) : (
+												<span className="muted small">—</span>
+											)
+										) : (
+											<div className="invoice-list">
+												{orderInvoices.map((invoice) => (
+													<div key={invoice.id} className="invoice-row">
+														<span className="invoice-number">
+															{invoice.number}
+															{' '}
+															<span
+																className={
+																	invoice.status === 'sent'
+																		? 'badge green'
+																		: 'badge'
+																}
+															>
+																{invoice.status === 'sent' ? 'отправлен' : 'черновик'}
+															</span>
+														</span>
+														<div className="actions" style={{ marginTop: 0 }}>
+															<button
+																className="button small"
+																onClick={() => void viewInvoice(invoice.id)}
+															>
+																Просмотр
+															</button>
+															{invoice.status === 'draft' ? (
+																<button
+																	className="button small primary"
+																	disabled={busyInvoiceId === invoice.id}
+																	onClick={() => void sendInvoice(invoice)}
+																>
+																	{busyInvoiceId === invoice.id
+																		? 'Отправка...'
+																		: 'Отправить счёт'}
+																</button>
+															) : null}
+														</div>
+													</div>
+												))}
+											</div>
+										)}
+									</td>
+									<td>
+										<button className="button" onClick={() => void openOrder(order)}>
+											Открыть
+										</button>
+									</td>
+								</tr>
+							);
+						})}
 					</tbody>
 				</table>
 			</div>
@@ -1201,7 +1377,7 @@ function OrdersTab({ onStatusChanged }: { onStatusChanged?: () => void }) {
 				<div className="card order-details">
 					<h3>Заказ №{selectedOrder.id}</h3>
 					<p>
-						<span className="badge">{selectedOrder.status}</span>{' '}
+						<span className="badge">{orderStatusLabel(selectedOrder.status)}</span>{' '}
 						<span className="muted">
 							сумма: {formatPrice(selectedOrder.total_minor, selectedOrder.currency)}
 						</span>
@@ -1210,6 +1386,20 @@ function OrdersTab({ onStatusChanged }: { onStatusChanged?: () => void }) {
 					{selectedOrder.shipping_address ? (
 						<p>
 							<strong>Адрес:</strong> {selectedOrder.shipping_address}
+						</p>
+					) : null}
+
+					{(contacts[selectedOrder.id]?.customer_email || selectedOrder.customer_email) ? (
+						<p>
+							<strong>Email:</strong>{' '}
+							{contacts[selectedOrder.id]?.customer_email || selectedOrder.customer_email}
+						</p>
+					) : null}
+
+					{(contacts[selectedOrder.id]?.customer_phone || selectedOrder.customer_phone) ? (
+						<p>
+							<strong>Телефон:</strong>{' '}
+							{contacts[selectedOrder.id]?.customer_phone || selectedOrder.customer_phone}
 						</p>
 					) : null}
 

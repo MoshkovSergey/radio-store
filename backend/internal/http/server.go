@@ -7,19 +7,23 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/example/radio-store/backend/internal/config"
 )
 
 type Server struct {
 	db        *pgxpool.Pool
 	jwtSecret string
 	uploadDir string
+	smtp      config.SMTPConfig
 }
 
-func New(db *pgxpool.Pool, jwtSecret string, uploadDir string) http.Handler {
+func New(db *pgxpool.Pool, jwtSecret string, uploadDir string, smtpCfg config.SMTPConfig) http.Handler {
 	s := &Server{
 		db:        db,
 		jwtSecret: jwtSecret,
 		uploadDir: uploadDir,
+		smtp:      smtpCfg,
 	}
 
 	mux := http.NewServeMux()
@@ -33,6 +37,7 @@ func New(db *pgxpool.Pool, jwtSecret string, uploadDir string) http.Handler {
 
 	mux.HandleFunc("GET /api/v1/categories", s.listCategories)
 	mux.HandleFunc("GET /api/v1/products", s.listProducts)
+	mux.HandleFunc("GET /api/v1/products/images", s.productImagesBatch)
 	mux.HandleFunc("GET /api/v1/products/{id}", s.getProduct)
 
 	mux.HandleFunc("POST /api/v1/auth/register", s.register)
@@ -65,7 +70,13 @@ func New(db *pgxpool.Pool, jwtSecret string, uploadDir string) http.Handler {
 
 	mux.HandleFunc("GET /api/v1/admin/orders", s.adminMiddleware(s.listOrders))
 	mux.HandleFunc("GET /api/v1/admin/orders/new-count", s.adminMiddleware(s.adminNewOrdersCount))
+	mux.HandleFunc("GET /api/v1/admin/orders/contacts", s.adminMiddleware(s.adminOrdersContacts))
 	mux.HandleFunc("PATCH /api/v1/admin/orders/{id}/status", s.adminMiddleware(s.adminUpdateOrderStatus))
+
+	mux.HandleFunc("POST /api/v1/admin/orders/{id}/invoices", s.adminMiddleware(s.adminCreateInvoice))
+	mux.HandleFunc("GET /api/v1/admin/invoices", s.adminMiddleware(s.adminListInvoices))
+	mux.HandleFunc("POST /api/v1/admin/invoices/{id}/send", s.adminMiddleware(s.adminSendInvoice))
+	mux.HandleFunc("GET /api/v1/admin/invoices/{id}/view", s.adminMiddleware(s.adminRenderInvoice))
 
 	mux.HandleFunc("GET /api/v1/admin/users", s.adminMiddleware(s.adminListUsers))
 	mux.HandleFunc("GET /api/v1/admin/users/{id}", s.adminMiddleware(s.adminGetUser))

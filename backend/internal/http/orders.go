@@ -6,7 +6,9 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/mail"
 	"strings"
+	"unicode"
 
 	"github.com/jackc/pgx/v5"
 
@@ -16,6 +18,8 @@ import (
 type createOrderRequest struct {
 	ShippingAddress string `json:"shipping_address"`
 	Comment         string `json:"comment"`
+	CustomerEmail   string `json:"customer_email"`
+	CustomerPhone   string `json:"customer_phone"`
 }
 
 type cartItemDraft struct {
@@ -36,6 +40,51 @@ type orderItemDraft struct {
 	SKU        string
 	Quantity   int
 	PriceMinor int64
+}
+
+// normalizeCustomerEmail валидирует email через net/mail и возвращает
+// нормализованный адрес (без display-name). Пустая строка -> nil (NULL в БД),
+// чтобы не ломать клиентов, которые контакты пока не шлют (например Flutter).
+// Непустая невалидная строка -> ошибка.
+func normalizeCustomerEmail(raw string) (*string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil, nil
+	}
+
+	addr, err := mail.ParseAddress(trimmed)
+	if err != nil {
+		return nil, errors.New("invalid customer email")
+	}
+
+	address := strings.TrimSpace(addr.Address)
+	if address == "" {
+		return nil, errors.New("invalid customer email")
+	}
+
+	return &address, nil
+}
+
+// normalizeCustomerPhone валидирует телефон по количеству цифр (6..15,
+// потолок E.164) без внешних зависимостей. Пустая строка -> nil (NULL).
+func normalizeCustomerPhone(raw string) (*string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil, nil
+	}
+
+	digits := 0
+	for _, r := range trimmed {
+		if unicode.IsDigit(r) {
+			digits++
+		}
+	}
+
+	if digits < 6 || digits > 15 {
+		return nil, errors.New("invalid customer phone")
+	}
+
+	return &trimmed, nil
 }
 
 func (s *Server) createOrder(w http.ResponseWriter, r *http.Request) {
@@ -64,6 +113,18 @@ func (s *Server) createOrder(w http.ResponseWriter, r *http.Request) {
 	var commentPtr *string
 	if comment != "" {
 		commentPtr = &comment
+	}
+
+	customerEmailPtr, err := normalizeCustomerEmail(req.CustomerEmail)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	customerPhonePtr, err := normalizeCustomerPhone(req.CustomerPhone)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 
 	tx, err := s.db.Begin(r.Context())
@@ -246,9 +307,11 @@ func (s *Server) createOrder(w http.ResponseWriter, r *http.Request) {
 			total_minor,
 			currency,
 			shipping_address,
-			comment
+			comment,
+			customer_email,
+			customer_phone
 		)
-		VALUES ($1, 'new', $2, $3, $4, $5)
+		VALUES ($1, 'new', $2, $3, $4, $5, $6, $7)
 		RETURNING id
 		`,
 		userID,
@@ -256,6 +319,8 @@ func (s *Server) createOrder(w http.ResponseWriter, r *http.Request) {
 		currency,
 		shippingAddressPtr,
 		commentPtr,
+		customerEmailPtr,
+		customerPhonePtr,
 	).Scan(&orderID)
 
 	if err != nil {
@@ -360,6 +425,8 @@ func (s *Server) listOrders(w http.ResponseWriter, r *http.Request) {
 			currency,
 			shipping_address,
 			comment,
+			customer_email,
+			customer_phone,
 			created_at,
 			updated_at
 		FROM orders
@@ -374,6 +441,8 @@ func (s *Server) listOrders(w http.ResponseWriter, r *http.Request) {
 			currency,
 			shipping_address,
 			comment,
+			customer_email,
+			customer_phone,
 			created_at,
 			updated_at
 		FROM orders
@@ -402,6 +471,8 @@ func (s *Server) listOrders(w http.ResponseWriter, r *http.Request) {
 			&order.Currency,
 			&order.ShippingAddress,
 			&order.Comment,
+			&order.CustomerEmail,
+			&order.CustomerPhone,
 			&order.CreatedAt,
 			&order.UpdatedAt,
 		); err != nil {
@@ -448,6 +519,8 @@ func (s *Server) getOrder(w http.ResponseWriter, r *http.Request) {
 			currency,
 			shipping_address,
 			comment,
+			customer_email,
+			customer_phone,
 			created_at,
 			updated_at
 		FROM orders
@@ -462,6 +535,8 @@ func (s *Server) getOrder(w http.ResponseWriter, r *http.Request) {
 			currency,
 			shipping_address,
 			comment,
+			customer_email,
+			customer_phone,
 			created_at,
 			updated_at
 		FROM orders
@@ -478,6 +553,8 @@ func (s *Server) getOrder(w http.ResponseWriter, r *http.Request) {
 		&order.Currency,
 		&order.ShippingAddress,
 		&order.Comment,
+		&order.CustomerEmail,
+		&order.CustomerPhone,
 		&order.CreatedAt,
 		&order.UpdatedAt,
 	)

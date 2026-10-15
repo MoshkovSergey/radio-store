@@ -5,7 +5,13 @@ import { resolveMediaUrl } from '@/lib/api';
 import { formatPrice, getInitials } from '@/lib/format';
 import type { Product } from '@/lib/types';
 
-export function ProductCard({ product }: { product: Product }) {
+export function ProductCard({
+  product,
+  priority = false,
+}: {
+  product: Product;
+  priority?: boolean;
+}) {
   const imageUrl = resolveMediaUrl(product.primary_image_url);
   const inStock = product.stock_quantity > 0 && product.is_active;
 
@@ -19,6 +25,7 @@ export function ProductCard({ product }: { product: Product }) {
             fill
             sizes="(max-width: 640px) 50vw, (max-width: 1080px) 33vw, 25vw"
             className="product-image"
+            priority={priority}
           />
         ) : (
           <div className="product-image-placeholder">
