@@ -1,5 +1,6 @@
 /frontend/.env
 /storefront/.env
+/storefront-next/.env
 .env
 
 # Environment
