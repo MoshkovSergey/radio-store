@@ -1,0 +1,75 @@
+package models
+
+import (
+	"encoding/json"
+	"time"
+)
+
+type Category struct {
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	Slug     string `json:"slug"`
+	ParentID *int64 `json:"parent_id,omitempty"`
+}
+
+type Product struct {
+	ID            int64           `json:"id"`
+	CategoryID    int64           `json:"category_id"`
+	Name          string          `json:"name"`
+	Slug          string          `json:"slug"`
+	SKU           string          `json:"sku"`
+	Manufacturer  *string         `json:"manufacturer,omitempty"`
+	Description   *string         `json:"description,omitempty"`
+	PriceMinor    int64           `json:"price_minor"`
+	Currency      string          `json:"currency"`
+	Attributes    json.RawMessage `json:"attributes"`
+	StockQuantity int             `json:"stock_quantity"`
+	IsActive      bool            `json:"is_active"`
+	CreatedAt     time.Time       `json:"created_at"`
+	UpdatedAt     time.Time       `json:"updated_at"`
+}
+
+type User struct {
+	ID       int64   `json:"id"`
+	Email    string  `json:"email"`
+	FullName *string `json:"full_name,omitempty"`
+	Role     string  `json:"role"`
+}
+
+type CartItem struct {
+	ProductID     int64           `json:"product_id"`
+	Name          string          `json:"name"`
+	SKU           string          `json:"sku"`
+	PriceMinor    int64           `json:"price_minor"`
+	Currency      string          `json:"currency"`
+	Attributes    json.RawMessage `json:"attributes"`
+	Quantity      int             `json:"quantity"`
+	StockQuantity int             `json:"stock_quantity"`
+}
+
+type Cart struct {
+	Items      []CartItem `json:"items"`
+	TotalMinor int64      `json:"total_minor"`
+	Currency   string     `json:"currency"`
+}
+
+type OrderItem struct {
+	ID         int64  `json:"id"`
+	ProductID  int64  `json:"product_id"`
+	Name       string `json:"name"`
+	SKU        string `json:"sku"`
+	Quantity   int    `json:"quantity"`
+	PriceMinor int64  `json:"price_minor"`
+}
+
+type Order struct {
+	ID              int64       `json:"id"`
+	Status          string      `json:"status"`
+	TotalMinor      int64       `json:"total_minor"`
+	Currency        string      `json:"currency"`
+	ShippingAddress *string     `json:"shipping_address,omitempty"`
+	Comment         *string     `json:"comment,omitempty"`
+	CreatedAt       time.Time   `json:"created_at"`
+	UpdatedAt       time.Time   `json:"updated_at"`
+	Items           []OrderItem `json:"items,omitempty"`
+}

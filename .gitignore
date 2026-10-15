@@ -1,0 +1,5 @@
+/frontend/.env
+/storefront/.env
+/frontend/node_modules/
+/storefront/node_modules/
+.env
