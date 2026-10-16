@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-import BlogEngagement from '../../components/BlogEngagement';
+import BlogEngagement from '../../../components/BlogEngagement';
 
 type BlogPostLayoutProps = {
   children: ReactNode;
