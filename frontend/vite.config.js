@@ -1,9 +1,16 @@
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
 
-export default defineConfig({
-	plugins: [react()],
-	server: {
-		port: 5173,
-	},
-});
+// base условный: в dev админка живёт на "/" (localhost:5173),
+// в прод-сборке — на "/admin/", чтобы nginx раздавал её по префиксу /admin.
+export default defineConfig(({ mode }) => ({
+  base: mode === 'production' ? '/admin/' : '/',
+  plugins: [react()],
+  server: {
+    port: 5173,
+  },
+  build: {
+    outDir: 'dist',
+    sourcemap: false,
+  },
+}))

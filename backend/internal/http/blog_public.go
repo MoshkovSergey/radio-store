@@ -22,7 +22,9 @@ const blogPostColumns = `
 	is_published,
 	published_at,
 	created_at,
-	updated_at
+	updated_at,
+	views_count,
+	likes_count
 `
 
 func scanBlogPost(row interface{ Scan(...any) error }) (models.BlogPost, error) {
@@ -39,6 +41,8 @@ func scanBlogPost(row interface{ Scan(...any) error }) (models.BlogPost, error) 
 		&post.PublishedAt,
 		&post.CreatedAt,
 		&post.UpdatedAt,
+		&post.ViewsCount,
+		&post.LikesCount,
 	)
 	return post, err
 }

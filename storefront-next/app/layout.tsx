@@ -56,10 +56,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="ru">
       <body>
-        <AuthProvider>
-          <div className="marketplace">
-            <Header />
-            <main className="main">{children}</main>
+      <script src="https://yandex.ru/ads/system/context.js" async></script>
+        <script data-page-id="20233889" src="https://yandex.ru/ads/system/ap-loader.js" async></script>
+          <AuthProvider>
+            <div className="marketplace">
+              <Header />
+              <main className="main">{children}</main>
             <Footer />
           </div>
         </AuthProvider>

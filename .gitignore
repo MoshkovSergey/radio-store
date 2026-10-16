@@ -15,6 +15,7 @@ backend/uploads/
 # Node / React
 frontend/node_modules/
 frontend/dist/
+frontend/.env.production
 storefront/node_modules/
 storefront/dist/
 

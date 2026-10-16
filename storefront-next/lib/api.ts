@@ -143,13 +143,48 @@ export async function getProductWithCategory(
   return { ...product, category };
 }
 
-// ===== Блог (серверные функции для SSR/ISR) =====
+// ===== Блог =====
+//
+// getBlogPosts и getAllBlogPostsForSitemap сделаны НЕKEШИРУЕМЫМИ
+// (cache: 'no-store'), чтобы /blog и /sitemap.xml отдавали свежий набор
+// опубликованных статей сразу после публикации/удаления в админке,
+// без лага ISR. Параметр revalidate в сигнатурах сохранён как
+// необязательный и намеренно игнорируется в теле — чтобы не ломать
+// существующие вызовы (лишнее свойство в литерале объекта упало бы
+// по типам, если убрать параметр, не тронув вызывающий код).
+//
+// getBlogPostBySlug оставлен с ISR (revalidate: 300): новая статья
+// рендерится on-demand по своему slug сразу, а правка текста уже
+// существующей статьи обновится с лагом до 5 минут — это не
+// "добавление", и на sitemap/список не влияет.
+
+export interface BlogPostWithStats extends BlogPost {
+  views_count: number;
+  likes_count: number;
+}
+
+export interface BlogEngagementResponse {
+  views_count: number;
+  likes_count: number;
+  liked: boolean;
+}
+
+export interface BlogViewResponse {
+  views_count: number;
+  likes_count: number;
+}
+
+export interface BlogLikeResponse {
+  liked: boolean;
+  views_count: number;
+  likes_count: number;
+}
 
 export async function getBlogPosts(params: {
   limit?: number;
   offset?: number;
   revalidate?: number;
-} = {}): Promise<BlogPost[]> {
+} = {}): Promise<BlogPostWithStats[]> {
   const query = new URLSearchParams();
   query.set('limit', String(params.limit ?? 20));
 
@@ -157,24 +192,32 @@ export async function getBlogPosts(params: {
     query.set('offset', String(params.offset));
   }
 
-  const data = await serverFetch<BlogPost[]>(
+  const data = await serverFetch<BlogPostWithStats[]>(
     `/api/v1/blog/posts?${query.toString()}`,
-    { next: { revalidate: params.revalidate ?? 300 } },
+    { cache: 'no-store' },
   );
 
   return data ?? [];
 }
 
-export async function getBlogPostBySlug(slug: string): Promise<BlogPost | null> {
-  return serverFetch<BlogPost>(`/api/v1/blog/posts/${encodeURIComponent(slug)}`, {
-    next: { revalidate: 300 },
-  });
+export async function getBlogPostBySlug(
+  slug: string,
+): Promise<BlogPostWithStats | null> {
+  return serverFetch<BlogPostWithStats>(
+    `/api/v1/blog/posts/${encodeURIComponent(slug)}`,
+    {
+      next: { revalidate: 300 },
+    },
+  );
 }
 
-export async function getAllBlogPostsForSitemap(): Promise<BlogPost[]> {
-  const data = await serverFetch<BlogPost[]>('/api/v1/blog/posts?limit=100', {
-    next: { revalidate: 300 },
-  });
+export async function getAllBlogPostsForSitemap(): Promise<BlogPostWithStats[]> {
+  const data = await serverFetch<BlogPostWithStats[]>(
+    '/api/v1/blog/posts?limit=100',
+    {
+      cache: 'no-store',
+    },
+  );
 
   return data ?? [];
 }
@@ -182,6 +225,7 @@ export async function getAllBlogPostsForSitemap(): Promise<BlogPost[]> {
 // ===== Клиентские функции (используются только в "use client") =====
 
 const TOKEN_KEY = 'radio_store_customer_token';
+const BLOG_VISITOR_TOKEN_KEY = 'radio_store_blog_visitor_token';
 
 export function getClientToken(): string {
   if (typeof window === 'undefined') {
@@ -205,6 +249,38 @@ export function clearClientToken(): void {
   }
 
   localStorage.removeItem(TOKEN_KEY);
+}
+
+function generateBrowserToken(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+
+    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  }
+
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+export function getBlogVisitorToken(): string {
+  if (typeof window === 'undefined') {
+    return '';
+  }
+
+  const existing = localStorage.getItem(BLOG_VISITOR_TOKEN_KEY);
+
+  if (existing) {
+    return existing;
+  }
+
+  const token = generateBrowserToken();
+  localStorage.setItem(BLOG_VISITOR_TOKEN_KEY, token);
+
+  return token;
 }
 
 async function clientFetch<T>(
@@ -250,6 +326,46 @@ async function clientFetch<T>(
   }
 
   return (await response.json()) as T;
+}
+
+export async function getBlogEngagement(
+  slug: string,
+): Promise<BlogEngagementResponse> {
+  const visitorToken = getBlogVisitorToken();
+  const query = new URLSearchParams();
+
+  if (visitorToken) {
+    query.set('visitor_token', visitorToken);
+  }
+
+  return clientFetch<BlogEngagementResponse>(
+    `/api/v1/blog/posts/${encodeURIComponent(slug)}/engagement?${query.toString()}`,
+  );
+}
+
+export async function recordBlogPostView(
+  slug: string,
+): Promise<BlogViewResponse> {
+  return clientFetch<BlogViewResponse>(
+    `/api/v1/blog/posts/${encodeURIComponent(slug)}/view`,
+    {
+      method: 'POST',
+    },
+  );
+}
+
+export async function toggleBlogPostLike(
+  slug: string,
+): Promise<BlogLikeResponse> {
+  const visitorToken = getBlogVisitorToken();
+
+  return clientFetch<BlogLikeResponse>(
+    `/api/v1/blog/posts/${encodeURIComponent(slug)}/like`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ visitor_token: visitorToken }),
+    },
+  );
 }
 
 export const clientApi = {
