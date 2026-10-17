@@ -155,6 +155,26 @@ async function textRequest(path: string): Promise<string> {
 	return response.text();
 }
 
+// ===== Типы для статистики посещений сайта =====
+
+export interface SiteVisitStatsRow {
+	page_path: string;
+	visits: number;
+	unique: number;
+}
+
+export interface SiteVisitDayStats {
+	date: string;
+	visits: number;
+}
+
+export interface SiteVisitStats {
+	total_visits: number;
+	total_unique: number;
+	top_pages: SiteVisitStatsRow[];
+	visits_by_day: SiteVisitDayStats[];
+}
+
 export const api = {
 	login(email: string, password: string): Promise<AuthResponse> {
 		return request<AuthResponse>('/api/v1/auth/login', {
@@ -359,5 +379,11 @@ export const api = {
 
 	getUser(id: number): Promise<AdminUser> {
 		return request<AdminUser>(`/api/v1/admin/users/${id}`);
+	},
+
+	// ===== Статистика посещений сайта =====
+
+	getSiteVisitStats(days: number = 30): Promise<SiteVisitStats> {
+		return request<SiteVisitStats>(`/api/v1/admin/visits/stats?days=${days}`);
 	},
 };

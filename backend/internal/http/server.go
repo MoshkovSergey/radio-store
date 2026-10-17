@@ -49,6 +49,9 @@ func New(db *pgxpool.Pool, jwtSecret string, uploadDir string, smtpCfg config.SM
 	mux.HandleFunc("POST /api/v1/blog/posts/{slug}/view", s.incrementBlogPostView)
 	mux.HandleFunc("POST /api/v1/blog/posts/{slug}/like", s.toggleBlogPostLike)
 
+	// Счётчик посещений сайта.
+	s.RegisterVisitsRoutes(mux)
+
 	mux.HandleFunc("POST /api/v1/auth/register", s.register)
 	mux.HandleFunc("POST /api/v1/auth/login", s.login)
 	mux.HandleFunc("GET /api/v1/auth/me", s.authMiddleware(s.me))

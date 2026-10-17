@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 
 import { Footer } from '@/components/Footer';
 import { Header } from '@/components/Header';
+import SiteVisitsTracker from '@/components/SiteVisitsTracker';
 import { AuthProvider } from '@/lib/auth-context';
 import { absoluteUrl, siteUrl } from '@/lib/seo';
 
@@ -71,6 +72,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         {/* /Yandex.Metrika counter */}
       </head>
       <body>
+        <SiteVisitsTracker />
+
         <script src="https://yandex.ru/ads/system/context.js" async></script>
         <script data-page-id="20233889" src="https://yandex.ru/ads/system/ap-loader.js" async></script>
 

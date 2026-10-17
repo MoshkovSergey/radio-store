@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 
 import { api, clearToken, getToken, resolveMediaUrl, setToken } from './api';
 import { BlogTab } from './BlogTab';
+import { StatsTab } from './StatsTab';
 import type {
 	AdminProduct,
 	AdminUser,
@@ -136,7 +137,7 @@ export default function App() {
 							setUser(null);
 						}}
 					>
-					 Выйти
+						Выйти
 					</button>
 				</div>
 			</div>
@@ -222,7 +223,7 @@ function LoginPage({ onLogin }: { onLogin: (user: User) => void }) {
 	);
 }
 
-type Tab = 'products' | 'categories' | 'orders' | 'blog' | 'users';
+type Tab = 'products' | 'categories' | 'orders' | 'blog' | 'users' | 'stats';
 
 function AdminPanel({ user, onLogout }: { user: User; onLogout: () => void }) {
 	const [tab, setTab] = useState<Tab>('products');
@@ -297,6 +298,12 @@ function AdminPanel({ user, onLogout }: { user: User; onLogout: () => void }) {
 				>
 					Пользователи
 				</button>
+				<button
+					className={tab === 'stats' ? 'tab active' : 'tab'}
+					onClick={() => setTab('stats')}
+				>
+					Статистика
+				</button>
 			</nav>
 
 			<main className="content">
@@ -307,6 +314,7 @@ function AdminPanel({ user, onLogout }: { user: User; onLogout: () => void }) {
 				) : null}
 				{tab === 'blog' ? <BlogTab /> : null}
 				{tab === 'users' ? <UsersTab /> : null}
+				{tab === 'stats' ? <StatsTab /> : null}
 			</main>
 		</div>
 	);
